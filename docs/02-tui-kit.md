@@ -25,7 +25,8 @@ visual idea lives in the kit.
 | `Indent` | shifts every line of a block right (prefixing `" "` to a joined block only indents its first line) |
 | `Panel` | rounded box whose border is a gradient flowing clockwise; `Phase` rotates it, `Focused` brightens it |
 | `Menu` | list with a spring-animated highlight glow that glides between rows |
-| `Pixels` | half-block canvas (two pixels per cell) — `Wordmark`, `Sigil`, `Orb` draw on it |
+| `Pixels` | half-block canvas (two pixels per cell) — `Sigil` and `Orb` draw on it |
+| `Wordmark` | the logo in a 5-row block font, every pixel a whole cell painted with a background color: no glyphs, so it is solid in any font (half-blocks are drawn by the font and often fall short of the cell) |
 | `Sigil` | deterministic identicon from a key fingerprint |
 | `Scene` | the compositor: base layer + overlays at (x,y), backdrop fill, dimming |
 | `Toasts` | slide-in notifications with easeOutBack, auto-expiring |

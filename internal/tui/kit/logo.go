@@ -5,29 +5,33 @@ import (
 	"image/color"
 	"math"
 	"strings"
+
+	"charm.land/lipgloss/v2"
 )
 
-// glyphs is a 5×6 pixel font for the wordmark (I is 3 wide). Drawn as
-// bitmaps and converted to half-blocks, so the logo can carry a true 2D
-// gradient.
+// glyphs is the wordmark's block font: five rows tall, with two-column
+// vertical strokes and one-row horizontal ones, so strokes look equally
+// thick on a terminal's roughly 1:2 cells.
 var glyphs = map[rune][]string{
-	'B': {"####.", "#...#", "####.", "#...#", "#...#", "####."},
-	'U': {"#...#", "#...#", "#...#", "#...#", "#...#", ".###."},
-	'L': {"#....", "#....", "#....", "#....", "#....", "#####"},
-	'E': {"#####", "#....", "####.", "#....", "#....", "#####"},
-	'T': {"#####", "..#..", "..#..", "..#..", "..#..", "..#.."},
-	'I': {"###", ".#.", ".#.", ".#.", ".#.", "###"},
-	'N': {"#...#", "##..#", "#.#.#", "#..##", "#...#", "#...#"},
+	'B': {"######.", "##...##", "######.", "##...##", "######."},
+	'U': {"##...##", "##...##", "##...##", "##...##", ".#####."},
+	'L': {"##....", "##....", "##....", "##....", "######"},
+	'E': {"######", "##....", "#####.", "##....", "######"},
+	'T': {"######", "..##..", "..##..", "..##..", "..##.."},
+	'I': {"##", "##", "##", "##", "##"},
+	'N': {"###...##", "####..##", "##.##.##", "##..####", "##...###"},
 }
 
-// Wordmark renders text (A–Z subset above) in the pixel font with a
-// diagonal gradient that drifts with phase. The result is 3 rows tall.
+// Wordmark renders text (letters above) in the block font with a diagonal
+// gradient that drifts with phase. The result is 5 rows tall.
 //
-// There is deliberately no drop shadow: the strokes are one pixel wide, so a
-// one-pixel shadow lands inside the letters' counters and reads as broken
-// glyphs rather than depth.
+// Every pixel is a whole cell painted with a background color — no glyphs
+// at all. A background always fills its cell exactly, while block glyphs
+// such as ▀ are drawn by the player's font and in many fonts fall short of
+// the cell, leaving dashed strokes and ragged edges.
 func Wordmark(text string, stops []color.Color, phase float64) string {
-	const gap, h = 1, 6
+	const gap = 2
+	h := len(glyphs['B'])
 	width := 0
 	for i, r := range text {
 		if i > 0 {
@@ -39,7 +43,10 @@ func Wordmark(text string, stops []color.Color, phase float64) string {
 			width += 2
 		}
 	}
-	px := NewPixels(width, h)
+	ink := make([][]color.Color, h)
+	for y := range ink {
+		ink[y] = make([]color.Color, width)
+	}
 	x0 := 0
 	for _, r := range text {
 		g, ok := glyphs[r]
@@ -53,14 +60,26 @@ func Wordmark(text string, stops []color.Color, phase float64) string {
 					continue
 				}
 				gx := x0 + x
-				// Diagonal: x dominates, y tilts it ~30°.
-				t := (float64(gx)/float64(max(width-1, 1)))*0.85 + float64(y)/float64(h)*0.15
-				px.Set(gx, y, Cyclic(stops, t*0.6+phase))
+				// Diagonal: x dominates, y tilts it.
+				t := float64(gx)/float64(max(width-1, 1))*0.85 + float64(y)/float64(max(h-1, 1))*0.15
+				ink[y][gx] = Cyclic(stops, t*0.6+phase)
 			}
 		}
 		x0 += len(g[0]) + gap
 	}
-	return px.Render()
+	rows := make([]string, h)
+	for y, line := range ink {
+		var b strings.Builder
+		for _, c := range line {
+			if c == nil {
+				b.WriteByte(' ')
+				continue
+			}
+			b.WriteString(lipgloss.NewStyle().Background(c).Render(" "))
+		}
+		rows[y] = b.String()
+	}
+	return strings.Join(rows, "\n")
 }
 
 // Sigil is a deterministic identicon for a key fingerprint: a 5×5 mirrored

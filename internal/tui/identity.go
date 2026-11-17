@@ -164,7 +164,13 @@ func (m Model) viewIdentity(edit bool) string {
 
 	if !edit {
 		shimmer := float64(m.frame) / 60
-		b.WriteString(kit.Center(kit.Wordmark("BULLETIN", m.th.Brand.Stops, shimmer), m.w) + "\n\n")
+		// The block wordmark is five rows; on short terminals the form
+		// needs them more, so the title falls back to a single line.
+		if m.h >= 26 {
+			b.WriteString(kit.Center(kit.Wordmark("BULLETIN", m.th.Brand.Stops, shimmer), m.w) + "\n\n")
+		} else {
+			b.WriteString(kit.Center(kit.Gradient("B U L L E T I N", lipgloss.NewStyle().Bold(true), m.th.Brand.Stops, shimmer), m.w) + "\n\n")
+		}
 		b.WriteString(kit.Center(kit.Gradient("make your mark", lipgloss.NewStyle().Bold(true), m.th.Brand.Stops, shimmer), m.w) + "\n")
 		b.WriteString(kit.Center(kit.S(m.th.Muted).Render("Your SSH key is your account — no password, no email, nothing to forget."), m.w) + "\n\n")
 	} else {

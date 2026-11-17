@@ -62,7 +62,7 @@ func TestPixelsAndSigils(t *testing.T) {
 	if Sigil("a", Midnight.Brand.Stops, 2) == Sigil("b", Midnight.Brand.Stops, 2) {
 		t.Fatal("sigils should differ by key")
 	}
-	if w := Wordmark("BULLETIN", Midnight.Brand.Stops, 0); lipgloss.Height(w) != 3 {
+	if w := Wordmark("BULLETIN", Midnight.Brand.Stops, 0); lipgloss.Height(w) != 5 {
 		t.Fatalf("wordmark height %d", lipgloss.Height(w))
 	}
 }
