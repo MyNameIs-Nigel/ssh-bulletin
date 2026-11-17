@@ -103,10 +103,10 @@ func startServer(t *testing.T) fixture {
 
 // session is one interactive connection, as the router opens it.
 type session struct {
-	sess   *gossh.Session
-	stdin  io.WriteCloser
-	mu     sync.Mutex
-	out    strings.Builder
+	sess  *gossh.Session
+	stdin io.WriteCloser
+	mu    sync.Mutex
+	out   strings.Builder
 }
 
 func (s *session) output() string {
