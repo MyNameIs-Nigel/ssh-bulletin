@@ -184,10 +184,15 @@ func (m Model) Init() tea.Cmd {
 func (m Model) animating() bool {
 	now := m.now()
 	switch {
-	case (m.screen == scrSplash || m.screen == scrOnboard) && now.Sub(m.lastInput) < ambientFlow:
-		// The splash and onboarding shimmer, but only for a while after the
-		// last keypress: someone who walks away from onboarding must not
-		// stream 20 fps until the idle timeout. The next key restarts it.
+	case m.screen == scrSplash:
+		// The splash is a waiting room: it moves until a key is pressed, so
+		// the birds and water never freeze and then jump. The idle timeout
+		// (clockTick) bounds how long an abandoned session can run it.
+		return true
+	case m.screen == scrOnboard && now.Sub(m.lastInput) < ambientFlow:
+		// Onboarding shimmers only for a while after the last keypress:
+		// someone who walks away from it must not stream 20 fps until the
+		// idle timeout. The next key restarts it.
 		return true
 	case m.accentT < 1, m.overlay != ovNone && m.overlayT < 1, m.overlay == ovNone && m.overlayT > 0:
 		return true
@@ -204,7 +209,7 @@ func (m Model) animating() bool {
 // focusFlow is how long a newly focused border keeps flowing.
 const focusFlow = 1600 * time.Millisecond
 
-// ambientFlow is how long the splash and onboarding keep animating after the
+// ambientFlow is how long onboarding keeps animating after the
 // last input before settling on a still frame.
 const ambientFlow = 8 * time.Second
 

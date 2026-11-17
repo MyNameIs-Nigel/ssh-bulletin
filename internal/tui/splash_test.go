@@ -152,3 +152,19 @@ func TestSignatureLooksLikeALink(t *testing.T) {
 		t.Errorf("signature is not bold+underlined: %q", sgr)
 	}
 }
+
+// The scene must not freeze while it waits for a key: a frozen splash that
+// then jumps on the next event reads as a stutter.
+func TestSplashKeepsAnimatingUntilAKey(t *testing.T) {
+	now := fixedNow
+	m := splashModel(t, nil, 100, 40, now)
+	m.now = func() time.Time { return now }
+	m.accentT = 1
+	m.focusAt = now.Add(-time.Hour)
+	for _, d := range []time.Duration{time.Second, 8 * time.Second, time.Minute, 10 * time.Minute} {
+		now = fixedNow.Add(d)
+		if !m.animating() {
+			t.Fatalf("splash stopped animating %v in, before any key", d)
+		}
+	}
+}
