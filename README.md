@@ -3,7 +3,7 @@
 A bulletin board you reach over SSH — part of the **ssharcade** fleet.
 
 ```
-ssh play.ssharcade.dev     # then pick BULLETIN in the lobby
+ssh play.ssharcade.dev     # pick BULLETIN once it is listed in the lobby
 ```
 
 **Your SSH key is your account.** No password, no email, and — unlike the other
@@ -56,5 +56,6 @@ BULLETIN_RENDER_DIR=/tmp/renders go test ./internal/tui -run TestRenderGoldens
 
 ## Not yet
 
-Moderation, editing/deleting posts, and the deploy job are deliberately out of
-scope for the scaffold — see [docs/README.md](docs/README.md).
+Moderation and editing or deleting posts remain out of scope for the scaffold.
+The release workflow can deploy Bulletin after the lobby, AWS, and GitHub
+setup in the [arcade onboarding guide](docs/01-arcade-onboarding.md).

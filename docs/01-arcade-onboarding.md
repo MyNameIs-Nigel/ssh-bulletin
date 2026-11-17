@@ -3,9 +3,9 @@
 **Goal:** the bulletin appears in the lobby menu and players reach it through the
 router's trusted-proxy bridge, on the same durability pattern as the other games.
 
-Nothing in this doc has been applied. Per workspace hard rule 7 the fleet compose
-file and `games.toml` belong to `ssh-arcadelobby/deploy/`, so the changes below land
-as a PR **there**, not here. Host and IAM steps are Nigel's to run.
+Fleet configuration lives in `ssh-arcadelobby/deploy/`. Submit the Compose
+service and registry entry together in a lobby PR. Apply the host and IAM
+settings before enabling the Bulletin deploy job.
 
 ## What is already proven
 
@@ -115,41 +115,47 @@ sudo chmod 0400 /srv/ssharcade/private/keys/bulletin/ssh_host_key
 sudo rm /srv/ssharcade/private/keys/bulletin/ssh_host_key.pub   # not needed on the mount
 ```
 
-The instance role's `ssharcade-litestream-s3-policy` must cover the `bulletin/` prefix.
-**Check its resource list before the first deploy.** If it enumerates per-game
-prefixes rather than the whole bucket, `BULLETIN_REQUIRE_REPLICATION=true` will stop
-the container from starting. That is fail-closed, as intended, but confusing if you
-don't expect it.
+Make sure `/srv/ssharcade/proxy_keys` contains the router's proxy public key
+and is readable by the container. Confirm that the EC2 instance profile's
+`ssharcade-litestream-s3-policy` allows bucket listing for the Bulletin prefix
+and object access under `bulletin/db/`. Litestream must be able to restore
+and replicate with that role.
 
-Then, once the image exists:
+## 4. Enable deployment and publish a release
 
-```bash
-cd /srv/ssharcade && docker compose up -d bulletin
-```
+1. Extend the `ssharcade-deploy` role's GitHub OIDC trust to the Bulletin
+   repository's `production` environment. Match the fleet's existing
+   subject format. For an ID-based subject, fetch the repo ID with
+   `gh api repos/MyNameIs-Nigel/ssh-bulletin --jq .id` and use
+   `repo:MyNameIs-Nigel@38890734/ssh-bulletin@<repo-id>:environment:production`.
+   If the repo uses the name-only subject, use
+   `repo:MyNameIs-Nigel/ssh-bulletin:environment:production`.
+2. In `ssh-bulletin`, create the `production` GitHub environment and permit
+   release **tags** matching `v*` in its deployment policy. Restrict who can
+   create release tags with a repository ruleset. The release job verifies the
+   exact semantic version, tag commit, and `main` ancestry before publishing.
+3. Set the GitHub Actions variables `ARCADE_DEPLOY_ROLE` (role ARN) and
+   `ARCADE_INSTANCE_ID` (fleet EC2 instance ID). If the host pulls images
+   anonymously, publish the first release with deployment disabled, then make
+   the Bulletin GHCR package public before enabling deployment.
+4. Deploy the updated lobby release so the fleet host has the new Compose
+   service and registry entry. The lobby can show BULLETIN offline until the
+   service starts. At this point the host key and instance S3 permissions
+   should already be in place.
+5. Set the **repository-level** Actions variable `ARCADE_DEPLOY_ENABLED=true`
+   and publish a stable `vMAJOR.MINOR.PATCH` release from `main`. While the
+   switch is unset, stable releases still smoke-test, scan, attest, and tag
+   images in GHCR. The deploy job pulls the approved image by digest over
+   SSM, writes `BULLETIN_IMAGE` in the fleet's `.env`, and starts only
+   Bulletin. It checks the SSH banner for the expected version and restores
+   the previous build if that check fails.
 
-## 4. Deploy (later)
+## 5. Verify the lobby and replication
 
-`release.yml` stops at **publish**. To add the SSM deploy job (mirror ssh-farm's):
-
-1. Add `repo:MyNameIs-Nigel@38890734/ssh-bulletin@<repo-id>:environment:production`
-   to the `ssharcade-deploy` trust policy, plus the name-only form.
-   - Get `<repo-id>` from `gh api repos/mynameis-nigel/ssh-bulletin --jq .id`.
-   - Better still, read it from the CloudTrail `AssumeRoleWithWebIdentity` event of
-     the first failed run, as the workspace CLAUDE.md describes.
-2. Create the `production` environment with a `main`-only deployment branch policy.
-   Because `sub` pins the environment and not the branch, that policy is what
-   restricts deploys to `main`.
-3. Set the `ARCADE_DEPLOY_ROLE` and `ARCADE_INSTANCE_ID` repo variables.
-4. Add `scripts/deploy/remote-deploy.sh` (from farm) and the `deploy` job.
-
-## 5. After the first deploy
-
-Run the §4.5-style checks:
-
-- the container env has `BULLETIN_REQUIRE_REPLICATION=true`. Inspect the
-  **running container**, not compose:
-  `docker inspect ssharcade-bulletin-1 --format '{{json .Config.Env}}' | tr ',' '\n' | grep REQUIRE_REPLICATION`
-- WAL objects appear under `s3://ssharcade-snoigel-data/bulletin/db/`;
-- the lobby shows BULLETIN online with its version.
-
-Add `bulletin` to `deploy/monitoring/`'s game list, so the replication check covers it.
+- Check the running container for `BULLETIN_REQUIRE_REPLICATION=true` using
+  `docker inspect ssharcade-bulletin-1 --format '{{json .Config.Env}}'`.
+- Connect with a player key using `ssh play.ssharcade.dev`. Confirm BULLETIN
+  is online, shows the release version, and opens under the player's key.
+- Make a test write and check for WAL objects under
+  `s3://ssharcade-snoigel-data/bulletin/db/`. Add `bulletin` to the game list
+  in `ssh-arcadelobby/deploy/monitoring/replication-check.sh` once it is live.
