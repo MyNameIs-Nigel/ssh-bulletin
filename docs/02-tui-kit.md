@@ -50,7 +50,7 @@ Two traps found while building it, both covered by `kit_test.go`:
 One frame loop at 20 fps (`kit.Frame`), guarded by a generation counter so a
 stale tick can never start a second loop. It runs **only while something
 animates** (a menu glow in flight, a toast, a cross-fading accent, a focus
-flow, and the splash/onboarding shimmer for 8 s after the last keypress) and
+flow, the splash until a key is pressed, and the onboarding shimmer for 8 s after the last keypress) and
 stops otherwise; a 15 s clock tick handles the idle timeout.
 `TestAnimationLoopStops` and `TestAmbientScreensSettle` hold that line — an always-on loop at 20 fps across
 every connected session is the main bandwidth and CPU cost this design has.

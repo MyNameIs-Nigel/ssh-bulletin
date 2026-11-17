@@ -138,13 +138,11 @@ func TestAnimationLoopStops(t *testing.T) {
 
 func eventMsgFor(e board.Event) tea.Msg { return liveEvent(e) }
 
-// The splash and onboarding animate after input, then settle: an abandoned
-// onboarding screen must not stream frames until the idle timeout.
+// Onboarding animates after input, then settles: an abandoned onboarding
+// screen must not stream frames until the idle timeout. (The splash is
+// exempt: it keeps moving until a key is pressed.)
 func TestAmbientScreensSettle(t *testing.T) {
-	if ambientFlow <= splashLength {
-		t.Fatalf("ambientFlow %v must exceed splashLength %v or the splash never auto-advances", ambientFlow, splashLength)
-	}
-	for _, scr := range []screen{scrSplash, scrOnboard} {
+	for _, scr := range []screen{scrOnboard} {
 		m, _ := newTestModel(t, nil, 100, 30)
 		m.screen = scr
 		now := fixedNow

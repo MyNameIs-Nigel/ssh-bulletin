@@ -98,9 +98,7 @@ func (m Model) viewBoard() string {
 	case m.loading && len(m.threads) == 0:
 		inner = "\n" + kit.Spinner(m.frame, stops) + kit.S(m.th.Muted).Render(" loading threads…")
 	case len(m.threads) == 0:
-		// The orb sits three rows into the panel; its rim fades into the
-		// backdrop there.
-		inner = emptyBoard(m.th, stops, iw, m.th.Backdrop(list.y+3, m.h))
+		inner = emptyBoard(m.th, stops, iw, m.blinking())
 	default:
 		menu := m.threadMenu
 		inner = "\n" + menu.Render(iw, ih-1, m.th, true)
@@ -112,12 +110,27 @@ func (m Model) viewBoard() string {
 	return kit.Indent(kit.SideBySide(1, left, m.threadPreview(pv, stops)), list.x)
 }
 
-func emptyBoard(th kit.Theme, stops []colorT, w int, bg colorT) string {
-	art := kit.Orb(4, kit.At(stops, 0.2), kit.At(stops, 0.9), bg)
-	msg := kit.GradientBold("A quiet board.", stops) + "\n" +
+// cat is the empty-board mascot. The eyes are the "o"s in the middle row;
+// they swap for "-" on a blink.
+var cat = [3]string{
+	` /\_/\`,
+	`( o.o )`,
+	` > ^ <`,
+}
+
+func emptyBoard(th kit.Theme, stops []colorT, w int, blink bool) string {
+	rows := cat
+	if blink {
+		rows[1] = strings.ReplaceAll(rows[1], "o", "-")
+	}
+	art := make([]string, len(rows))
+	for i, r := range rows {
+		art[i] = kit.Gradient(r+strings.Repeat(" ", len(cat[1])-len(r)), lipgloss.NewStyle(), stops, 0)
+	}
+	msg := kit.GradientBold("The board is empty!", stops) + "\n" +
 		kit.S(th.Muted).Render("Every board starts with one brave post.") + "\n\n" +
 		kit.S(th.Faint).Render("press ") + kit.S(kit.At(stops, 0.4)).Bold(true).Render("n") + kit.S(th.Faint).Render(" to start the first thread")
-	return "\n\n" + kit.Center(art, w) + "\n\n" + kit.Center(lipgloss.NewStyle().Align(lipgloss.Center).Render(msg), w)
+	return "\n\n" + kit.Center(strings.Join(art, "\n"), w) + "\n\n" + kit.Center(lipgloss.NewStyle().Align(lipgloss.Center).Render(msg), w)
 }
 
 // threadPreview shows the highlighted thread's opening post.

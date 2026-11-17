@@ -42,6 +42,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case eventsClosedMsg:
 		return m, nil
 
+	case blinkMsg:
+		if msg.gen == m.blinkGen && !m.emptyAt.IsZero() {
+			cmds = append(cmds, m.blinkTick())
+		}
+
 	case eventMsg:
 		cmds = append(cmds, waitEvent(m.d.Events), m.onEvent(board.Event(msg)))
 
@@ -66,6 +71,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.threads = msg.threads
 		m.threadMenu.SetItems(threadItems(m.threads, m.now()))
 		cmds = append(cmds, m.wantPreview())
+		switch {
+		case len(m.threads) > 0:
+			m.emptyAt = time.Time{}
+		case m.emptyAt.IsZero():
+			// The cat blinks for the first time blinkFirst after arriving.
+			m.emptyAt = m.now()
+			m.blinkGen++
+			cmds = append(cmds, m.blinkTick())
+		}
 
 	case previewMsg:
 		m.previews[msg.threadID] = msg.posts
@@ -238,9 +252,6 @@ func (m *Model) step() {
 	m.boardMenu.Step(dt)
 	m.threadMenu.Step(dt)
 	m.toasts.Step(now, dt)
-	if m.screen == scrSplash && now.Sub(m.born) > splashLength && m.acct != nil {
-		m.leaveSplash()
-	}
 }
 
 // onEvent reacts to another session's activity: refresh what is on screen
@@ -291,8 +302,6 @@ func (m Model) stopsForBoard(id int64) []color.Color {
 
 // ---- navigation --------------------------------------------------------
 
-const splashLength = 2600 * time.Millisecond
-
 func (m *Model) leaveSplash() {
 	if m.acct == nil {
 		m.screen = scrOnboard
@@ -312,6 +321,7 @@ func (m *Model) goHome() {
 func (m *Model) enterBoard(b board.Board) tea.Cmd {
 	m.curBoard = b
 	m.screen = scrBoard
+	m.emptyAt = time.Time{}
 	m.threads = nil
 	m.threadMenu = kit.NewMenu(nil)
 	m.loading = true

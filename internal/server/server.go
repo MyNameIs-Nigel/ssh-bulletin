@@ -43,6 +43,7 @@ type Server struct {
 	ssh      *ssh.Server
 	svc      *board.Service
 	identity *identity.Resolver
+	version  string // read once at construction; sessions never touch the global
 }
 
 // New constructs and configures the SSH server.
@@ -54,13 +55,13 @@ func New(cfg config.Config, logger *slog.Logger, svc *board.Service, resolver *i
 	}
 	limits := NewSessionLimits(cfg.MaxConnections, cfg.MaxSessionsPerKey, resolver)
 	rl := ratelimiter.NewRateLimiter(rate.Limit(cfg.RateLimitPerSecond), cfg.RateLimitBurst, cfg.RateLimitMaxEntries)
-	srv := &Server{cfg: cfg, logger: logger, svc: svc, identity: resolver}
+	srv := &Server{cfg: cfg, logger: logger, svc: svc, identity: resolver, version: version.Version}
 
 	s, err := wish.NewServer(
 		wish.WithAddress(cfg.ListenAddr()),
 		wish.WithHostKeyPath(cfg.HostKeyPath),
 		wish.WithIdleTimeout(cfg.IdleTimeout),
-		withVersion(version.Version),
+		withVersion(srv.version),
 		wish.WithPublicKeyAuth(func(_ ssh.Context, key ssh.PublicKey) bool { return key != nil }),
 		// Middlewares run bottom-up: logging → rate limit → scope → caps →
 		// PTY → account attach → the TUI.
@@ -164,6 +165,7 @@ func (srv *Server) newProgram(s ssh.Session) *tea.Program {
 		Height:      h,
 		IdleTimeout: srv.cfg.IdleTimeout,
 		Context:     s.Context(),
+		Version:     srv.version,
 	})
 	opts := append(bubbletea.MakeOptions(s), tea.WithColorProfile(colorprofile.TrueColor))
 	return tea.NewProgram(model, opts...)
@@ -171,7 +173,7 @@ func (srv *Server) newProgram(s ssh.Session) *tea.Program {
 
 // ListenAndServe starts accepting connections.
 func (srv *Server) ListenAndServe() error {
-	srv.logger.Info("ssh server listening", "addr", srv.cfg.ListenAddr(), "version", version.Version)
+	srv.logger.Info("ssh server listening", "addr", srv.cfg.ListenAddr(), "version", srv.version)
 	return srv.ssh.ListenAndServe()
 }
 

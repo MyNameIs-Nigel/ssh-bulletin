@@ -109,7 +109,7 @@ func Sigil(fingerprint string, stops []color.Color, size int) string {
 }
 
 // Orb renders a soft glowing sphere — a radial gradient on the pixel canvas.
-// Used as ambient decoration on the splash and onboarding screens. The rim
+// Used as ambient decoration on the board screens. The rim
 // fades into bg, which must be the backdrop the orb is drawn over; a darker
 // bg leaves a ring of dark pixels around it.
 func Orb(radius int, core, edge color.Color, bg color.Color) string {

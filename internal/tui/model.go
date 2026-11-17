@@ -32,6 +32,7 @@ type Deps struct {
 	Context     context.Context
 	Now         func() time.Time // tests pin the clock
 	NoSplash    bool             // tests skip straight past the splash
+	Version     string           // build version for the footer; "" or "dev" shows "dev build"
 }
 
 type screen int
@@ -78,6 +79,8 @@ type Model struct {
 	lastFrame time.Time
 	focusAt   time.Time // when focus last changed: borders flow briefly
 	lastInput time.Time
+	emptyAt   time.Time // when the board in view became empty; zero if it is not
+	blinkGen  int       // identifies the live blink timer; stale ones are dropped
 
 	// Data.
 	stats      board.Stats
@@ -184,10 +187,17 @@ func (m Model) Init() tea.Cmd {
 func (m Model) animating() bool {
 	now := m.now()
 	switch {
-	case (m.screen == scrSplash || m.screen == scrOnboard) && now.Sub(m.lastInput) < ambientFlow:
-		// The splash and onboarding shimmer, but only for a while after the
-		// last keypress: someone who walks away from onboarding must not
-		// stream 20 fps until the idle timeout. The next key restarts it.
+	case m.screen == scrSplash:
+		// The splash is a waiting room: it moves until a key is pressed, so
+		// the birds and water never freeze and then jump. The idle timeout
+		// (clockTick) bounds how long an abandoned session can run it.
+		return true
+	case m.screen == scrOnboard && now.Sub(m.lastInput) < ambientFlow:
+		// Onboarding shimmers only for a while after the last keypress:
+		// someone who walks away from it must not stream 20 fps until the
+		// idle timeout. The next key restarts it.
+		return true
+	case m.onEmptyBoard() && m.blinking():
 		return true
 	case m.accentT < 1, m.overlay != ovNone && m.overlayT < 1, m.overlay == ovNone && m.overlayT > 0:
 		return true
@@ -204,9 +214,8 @@ func (m Model) animating() bool {
 // focusFlow is how long a newly focused border keeps flowing.
 const focusFlow = 1600 * time.Millisecond
 
-// ambientFlow is how long the splash and onboarding keep animating after the
-// last input before settling on a still frame. It must exceed splashLength,
-// or a returning player is never carried past the splash.
+// ambientFlow is how long onboarding keeps animating after the
+// last input before settling on a still frame.
 const ambientFlow = 8 * time.Second
 
 // ensureTicking starts the frame loop if it is not running.
@@ -248,6 +257,7 @@ type postsMsg struct {
 type eventMsg board.Event
 type eventsClosedMsg struct{}
 type clockMsg struct{}
+type blinkMsg struct{ gen int }
 type registeredMsg struct {
 	acct board.Account
 	err  error
@@ -322,4 +332,44 @@ func (m Model) viewerID() int64 {
 		return 0
 	}
 	return m.acct.ID
+}
+
+// The empty-board cat first blinks blinkFirst after the empty board appears,
+// then every blinkEvery, shutting its eyes for blinkFor. Blinking is a pure
+// function of the clock; a timer aimed at each blink wakes the frame loop
+// just for it, so the resting cat costs no frames at all.
+const (
+	blinkFirst = 3 * time.Second
+	blinkEvery = 5 * time.Second
+	blinkFor   = 350 * time.Millisecond
+)
+
+// onEmptyBoard reports whether the board screen is showing its empty state.
+func (m Model) onEmptyBoard() bool {
+	return m.screen == scrBoard && !m.loading && len(m.threads) == 0
+}
+
+// untilBlink is how long until the next blink starts, counted from when the
+// empty board appeared (zero while one is under way).
+func (m Model) untilBlink() time.Duration {
+	e := m.now().Sub(m.emptyAt)
+	if e < blinkFirst {
+		return blinkFirst - e
+	}
+	return (blinkEvery - (e-blinkFirst)%blinkEvery) % blinkEvery
+}
+
+// blinking reports whether the cat's eyes are shut right now.
+func (m Model) blinking() bool {
+	if m.emptyAt.IsZero() {
+		return false
+	}
+	e := m.now().Sub(m.emptyAt)
+	return e >= blinkFirst && (e-blinkFirst)%blinkEvery < blinkFor
+}
+
+// blinkTick fires just after the next blink begins.
+func (m Model) blinkTick() tea.Cmd {
+	gen := m.blinkGen
+	return tea.Tick(m.untilBlink()+20*time.Millisecond, func(time.Time) tea.Msg { return blinkMsg{gen: gen} })
 }
