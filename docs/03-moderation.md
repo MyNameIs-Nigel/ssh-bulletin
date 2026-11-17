@@ -1,0 +1,24 @@
+# Bulletin moderation proposal
+
+## Assessment of v1
+
+- The SSH resolver authenticates direct players by key and accepts player fingerprints from configured Arcade proxy keys. An SSH username only suggests a display handle. SQLite already enforces case-insensitive handle uniqueness on registration and profile changes.
+- The thread view uses `OP` for the opening post. There is no persistent owner, admin role, report queue, or action history.
+- Posting runs through the board service and SQLite. The SSH layer limits sessions per key and requests per network address, while the Arcade lobby applies its own public-IP limit. Neither limits posts made from an open session. The Arcade v2 bridge forwards identity and terminal metadata, so the bulletin sees the lobby's address for every proxied player.
+
+## Forum patterns and choices
+
+- Discourse puts flags into a staff review queue, and Reddit gives moderators a queue with context and review actions. A Bulletin report records a reason and enters a private queue without changing visibility. A moderator can dismiss the reports or remove the post. Keeping the decision with a comment makes the outcome understandable to the next moderator. [Discourse moderation guide](https://meta.discourse.org/t/discourse-moderation-guide/63116) · [Reddit moderation queue](https://support.reddithelp.com/hc/en-us/articles/15484440494356-Moderation-Queue)
+- Keep the original content for staff review and allow restoration. Removing the opening post hides its thread, title, and replies. Removing a reply hides that reply. Staff can review the current removed items and a paginated, append-only history.
+- SSH public-key authentication proves possession of a private key. A handle can change, so store roles against the underlying key identity. The owner looks up a registered handle and enters the complete SHA-256 fingerprint supplied by that player before granting or revoking admin access. [RFC 4252, section 7](https://datatracker.ietf.org/doc/html/rfc4252#section-7)
+- OpenSSH uses per-source connection controls, and RFC 6269 describes the collateral effects of treating a shared IP as one user. Give directly connected players a shared concurrent-session cap per IPv4 address or IPv6 /64. For all ingress, apply posting quotas to each key and a shared quota to new accounts. The live lobby's existing per-IP limit still governs its public listener. A network can represent several machines, and a machine can change networks. [OpenSSH sshd_config](https://man.openbsd.org/sshd_config#PerSourceMaxStartups) · [RFC 6269](https://datatracker.ietf.org/doc/html/rfc6269)
+
+## Rollout and workflow
+
+- A fresh database reserves `SU` for the first authenticated Bulletin terminal session, even if that player finishes onboarding later. On upgrade, use the earliest registered player by account creation time and ID. Earlier unregistered connections cannot be recovered from the database. Set `BULLETIN_OWNER_FINGERPRINT` to the full OpenSSH SHA-256 fingerprint before the first launch if the intended owner differs or only connected without registering. The setting can preselect a key before registration. After ownership has been recorded, the setting must match the stored owner.
+- `SU` marks the super admin, `A` marks an admin, and `OP` still identifies the opening post in a thread. A staff member can display both flairs. The profile shows the player's own fingerprint.
+- In a thread, select a post and press `!` to report it. Give a short reason such as spam, harassment, or an off-topic post. A player can submit one report per post and up to five in ten minutes.
+- Open **Moderation** with `m` or the jump palette. The **Queue**, **History**, and **Removed** tabs are available to admins and the owner. Enter opens full details. Moderators can dismiss reports, remove any visible post, and restore removed posts. A decision requires a reason and resolves all currently pending reports on that post. The owner can also manage admins in the **Admins** tab.
+- Threads and replies share a limit of five posts per key per rolling minute. Accounts less than 24 hours old share an additional cap of 20 posts per rolling minute. Removed posts still count. The database checks quotas in the posting transaction. Direct sessions also share a configurable cap of six per source network.
+- A later Arcade change could forward a lobby-issued network identifier accepted only from trusted proxy keys, or limit new identities at the lobby. For a sustained attack across many networks, invite-only posting would provide stronger control at the cost of open signup. Both require separate rollout decisions.
+- SQLite migrates existing data in place. Back up the database before rollout. Restoring that backup is required to roll back to the old binary, which rejects newer schema versions.
