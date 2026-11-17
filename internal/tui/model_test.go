@@ -141,9 +141,6 @@ func eventMsgFor(e board.Event) tea.Msg { return liveEvent(e) }
 // The splash and onboarding animate after input, then settle: an abandoned
 // onboarding screen must not stream frames until the idle timeout.
 func TestAmbientScreensSettle(t *testing.T) {
-	if ambientFlow <= splashLength {
-		t.Fatalf("ambientFlow %v must exceed splashLength %v or the splash never auto-advances", ambientFlow, splashLength)
-	}
 	for _, scr := range []screen{scrSplash, scrOnboard} {
 		m, _ := newTestModel(t, nil, 100, 30)
 		m.screen = scr

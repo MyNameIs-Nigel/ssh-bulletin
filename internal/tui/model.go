@@ -205,8 +205,7 @@ func (m Model) animating() bool {
 const focusFlow = 1600 * time.Millisecond
 
 // ambientFlow is how long the splash and onboarding keep animating after the
-// last input before settling on a still frame. It must exceed splashLength,
-// or a returning player is never carried past the splash.
+// last input before settling on a still frame.
 const ambientFlow = 8 * time.Second
 
 // ensureTicking starts the frame loop if it is not running.

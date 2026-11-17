@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"image/color"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -238,9 +237,6 @@ func (m *Model) step() {
 	m.boardMenu.Step(dt)
 	m.threadMenu.Step(dt)
 	m.toasts.Step(now, dt)
-	if m.screen == scrSplash && now.Sub(m.born) > splashLength && m.acct != nil {
-		m.leaveSplash()
-	}
 }
 
 // onEvent reacts to another session's activity: refresh what is on screen
@@ -290,8 +286,6 @@ func (m Model) stopsForBoard(id int64) []color.Color {
 }
 
 // ---- navigation --------------------------------------------------------
-
-const splashLength = 2600 * time.Millisecond
 
 func (m *Model) leaveSplash() {
 	if m.acct == nil {
