@@ -93,10 +93,10 @@ func (m Model) viewHome() string {
 	left := lp.Render("\n" + menu.Render(iw, ih-1, m.th, true))
 
 	if detail.w == 0 {
-		return " " + strings.ReplaceAll(left, "\n", "\n ")
+		return kit.Indent(left, list.x)
 	}
 	right := m.boardDetail(detail)
-	return kit.Block(" "+kit.SideBySide(1, left, right), m.w, b.h)
+	return kit.Block(kit.Indent(kit.SideBySide(1, left, right), list.x), m.w, b.h)
 }
 
 // boardDetail is the right pane on the home screen: the highlighted board's

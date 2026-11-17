@@ -62,7 +62,7 @@ func TestPixelsAndSigils(t *testing.T) {
 	if Sigil("a", Midnight.Brand.Stops, 2) == Sigil("b", Midnight.Brand.Stops, 2) {
 		t.Fatal("sigils should differ by key")
 	}
-	if w := Wordmark("BULLETIN", Midnight.Brand.Stops, Midnight.Line, 0); lipgloss.Height(w) != 4 {
+	if w := Wordmark("BULLETIN", Midnight.Brand.Stops, 0); lipgloss.Height(w) != 3 {
 		t.Fatalf("wordmark height %d", lipgloss.Height(w))
 	}
 }
@@ -97,5 +97,21 @@ func TestSceneGivesUnstyledTextTheThemeColor(t *testing.T) {
 	want := fmt.Sprintf("38;2;%d;%d;%d", r>>8, g>>8, b>>8)
 	if !strings.Contains(out, want) {
 		t.Fatalf("unstyled base text did not get Theme.Text (%s): %q", want, out)
+	}
+}
+
+// The masthead rule must land exactly on its resting look when the sweep
+// ends (and start from it), or it visibly jumps when the animation stops.
+func TestGlowRuleSettles(t *testing.T) {
+	stops := Midnight.Brand.Stops
+	rest := GlowRule(80, "━", stops, Midnight.BgTop, 1)
+	if GlowRule(80, "━", stops, Midnight.BgTop, 0) != rest {
+		t.Fatal("sweep 0 differs from the resting rule")
+	}
+	if GlowRule(80, "━", stops, Midnight.BgTop, 0.5) == rest {
+		t.Fatal("mid-sweep should show a highlight")
+	}
+	if w := lipgloss.Width(rest); w != 80 {
+		t.Fatalf("width %d", w)
 	}
 }

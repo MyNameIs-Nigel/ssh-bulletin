@@ -9,7 +9,7 @@ import (
 
 // glyphs is a 5×6 pixel font for the wordmark (I is 3 wide). Drawn as
 // bitmaps and converted to half-blocks, so the logo can carry a true 2D
-// gradient and a pixel-exact drop shadow.
+// gradient.
 var glyphs = map[rune][]string{
 	'B': {"####.", "#...#", "####.", "#...#", "#...#", "####."},
 	'U': {"#...#", "#...#", "#...#", "#...#", "#...#", ".###."},
@@ -21,56 +21,44 @@ var glyphs = map[rune][]string{
 }
 
 // Wordmark renders text (A–Z subset above) in the pixel font with a
-// diagonal gradient that drifts with phase, plus a one-pixel drop shadow.
-// The result is 4 rows tall (6 pixel rows + shadow, rounded up).
-func Wordmark(text string, stops []color.Color, shadow color.Color, phase float64) string {
+// diagonal gradient that drifts with phase. The result is 3 rows tall.
+//
+// There is deliberately no drop shadow: the strokes are one pixel wide, so a
+// one-pixel shadow lands inside the letters' counters and reads as broken
+// glyphs rather than depth.
+func Wordmark(text string, stops []color.Color, phase float64) string {
 	const gap, h = 1, 6
 	width := 0
-	for _, r := range text {
+	for i, r := range text {
+		if i > 0 {
+			width += gap
+		}
 		if g, ok := glyphs[r]; ok {
-			width += len(g[0]) + gap
+			width += len(g[0])
 		} else {
-			width += 3
+			width += 2
 		}
 	}
-	px := NewPixels(width+1, h+1)
-	ink := make([][]bool, h)
-	for y := range ink {
-		ink[y] = make([]bool, width)
-	}
+	px := NewPixels(width, h)
 	x0 := 0
 	for _, r := range text {
 		g, ok := glyphs[r]
 		if !ok {
-			x0 += 3
+			x0 += 2 + gap
 			continue
 		}
 		for y, row := range g {
 			for x, c := range row {
-				if c == '#' {
-					ink[y][x0+x] = true
+				if c != '#' {
+					continue
 				}
+				gx := x0 + x
+				// Diagonal: x dominates, y tilts it ~30°.
+				t := (float64(gx)/float64(max(width-1, 1)))*0.85 + float64(y)/float64(h)*0.15
+				px.Set(gx, y, Cyclic(stops, t*0.6+phase))
 			}
 		}
 		x0 += len(g[0]) + gap
-	}
-	// Shadow first (offset +1,+1), then ink over it.
-	for y := range h {
-		for x := range width {
-			if ink[y][x] {
-				px.Set(x+1, y+1, shadow)
-			}
-		}
-	}
-	for y := range h {
-		for x := range width {
-			if !ink[y][x] {
-				continue
-			}
-			// Diagonal: x dominates, y tilts it ~30°.
-			t := (float64(x)/float64(max(width-1, 1)))*0.85 + float64(y)/float64(h)*0.15
-			px.Set(x, y, Cyclic(stops, t*0.6+phase))
-		}
 	}
 	return px.Render()
 }
@@ -102,7 +90,9 @@ func Sigil(fingerprint string, stops []color.Color, size int) string {
 }
 
 // Orb renders a soft glowing sphere — a radial gradient on the pixel canvas.
-// Used as ambient decoration on the splash and onboarding screens.
+// Used as ambient decoration on the splash and onboarding screens. The rim
+// fades into bg, which must be the backdrop the orb is drawn over; a darker
+// bg leaves a ring of dark pixels around it.
 func Orb(radius int, core, edge color.Color, bg color.Color) string {
 	// Half-block pixels are roughly square, so a circle is as wide in
 	// columns as it is tall in pixels.

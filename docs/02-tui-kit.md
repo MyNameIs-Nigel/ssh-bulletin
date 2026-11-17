@@ -21,6 +21,8 @@ visual idea lives in the kit.
 | | |
 | --- | --- |
 | `Gradient`, `GradientBold`, `Rule`, `FadeRule`, `Bar` | per-character gradients; `offset` animates them |
+| `GlowRule` | the masthead rule: a gradient with a highlight that sweeps across once after a focus change; sweep 0 and 1 render identically, so it never jumps when it settles |
+| `Indent` | shifts every line of a block right (prefixing `" "` to a joined block only indents its first line) |
 | `Panel` | rounded box whose border is a gradient flowing clockwise; `Phase` rotates it, `Focused` brightens it |
 | `Menu` | list with a spring-animated highlight glow that glides between rows |
 | `Pixels` | half-block canvas (two pixels per cell) — `Wordmark`, `Sigil`, `Orb` draw on it |

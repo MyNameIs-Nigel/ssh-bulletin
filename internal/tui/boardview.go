@@ -98,20 +98,22 @@ func (m Model) viewBoard() string {
 	case m.loading && len(m.threads) == 0:
 		inner = "\n" + kit.Spinner(m.frame, stops) + kit.S(m.th.Muted).Render(" loading threads…")
 	case len(m.threads) == 0:
-		inner = emptyBoard(m.th, stops, iw)
+		// The orb sits three rows into the panel; its rim fades into the
+		// backdrop there.
+		inner = emptyBoard(m.th, stops, iw, m.th.Backdrop(list.y+3, m.h))
 	default:
 		menu := m.threadMenu
 		inner = "\n" + menu.Render(iw, ih-1, m.th, true)
 	}
 	left := lp.Render(inner)
 	if pv.w == 0 {
-		return " " + strings.ReplaceAll(left, "\n", "\n ")
+		return kit.Indent(left, list.x)
 	}
-	return " " + kit.SideBySide(1, left, m.threadPreview(pv, stops))
+	return kit.Indent(kit.SideBySide(1, left, m.threadPreview(pv, stops)), list.x)
 }
 
-func emptyBoard(th kit.Theme, stops []colorT, w int) string {
-	art := kit.Orb(4, kit.At(stops, 0.2), kit.At(stops, 0.9), th.BgTop)
+func emptyBoard(th kit.Theme, stops []colorT, w int, bg colorT) string {
+	art := kit.Orb(4, kit.At(stops, 0.2), kit.At(stops, 0.9), bg)
 	msg := kit.GradientBold("A quiet board.", stops) + "\n" +
 		kit.S(th.Muted).Render("Every board starts with one brave post.") + "\n\n" +
 		kit.S(th.Faint).Render("press ") + kit.S(kit.At(stops, 0.4)).Bold(true).Render("n") + kit.S(th.Faint).Render(" to start the first thread")

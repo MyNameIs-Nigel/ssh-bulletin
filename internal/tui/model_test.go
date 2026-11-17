@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mynameis-nigel/ssh-bulletin/internal/board"
 )
@@ -159,6 +160,33 @@ func TestAmbientScreensSettle(t *testing.T) {
 		m.lastInput = now.Add(-time.Minute)
 		if m.animating() {
 			t.Errorf("screen %v: still animating a minute after the last input", scr)
+		}
+	}
+}
+
+// A panel's top corner must sit in the same column as its sides. Indenting a
+// joined block with a leading " " shifts only its first row, which is how the
+// top edges once drifted one column right of the borders below them.
+func TestPanelEdgesAlign(t *testing.T) {
+	svc, _ := testService(t)
+	acct, _, _ := svc.Lookup(context.Background(), "SHA256:demo-0")
+	for _, keys := range [][]string{nil, {"enter"}} {
+		m := New(Deps{Service: svc, Fingerprint: "SHA256:demo-0", Account: &acct, Width: 111, Height: 32,
+			Now: func() time.Time { return fixedNow }, NoSplash: true})
+		msgs := []tea.Msg{tea.WindowSizeMsg{Width: 111, Height: 32}}
+		for _, k := range keys {
+			msgs = append(msgs, key(k))
+		}
+		m = drive(t, m, msgs...)
+		rows := strings.Split(ansi.Strip(m.View().Content), "\n")
+		top, side := []rune(rows[2]), []rune(rows[3])
+		for x, r := range top {
+			if r != '╭' && r != '╮' {
+				continue
+			}
+			if x >= len(side) || side[x] != '│' {
+				t.Errorf("%v: corner %q at column %d has no side border under it: %q", keys, r, x, string(side))
+			}
 		}
 	}
 }

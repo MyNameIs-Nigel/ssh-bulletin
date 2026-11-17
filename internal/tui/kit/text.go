@@ -54,6 +54,16 @@ func Wrap(s string, width int) string {
 	return ansi.Wrap(s, width, "")
 }
 
+// Indent shifts every line of a block right by n columns. (Prefixing the
+// block with spaces only indents its first line.)
+func Indent(block string, n int) string {
+	if n <= 0 {
+		return block
+	}
+	pad := strings.Repeat(" ", n)
+	return pad + strings.ReplaceAll(block, "\n", "\n"+pad)
+}
+
 // SideBySide joins blocks horizontally with a gap, aligned to the top.
 func SideBySide(gap int, blocks ...string) string {
 	sp := strings.Repeat(" ", gap)

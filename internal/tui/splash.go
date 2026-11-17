@@ -10,14 +10,14 @@ import (
 	"github.com/mynameis-nigel/ssh-bulletin/internal/tui/kit"
 )
 
-// viewSplash is the title card: a drifting pixel wordmark with a drop
-// shadow, a tagline that types itself out, and a breathing prompt.
+// viewSplash is the title card: a drifting pixel wordmark, a tagline that
+// types itself out, and a breathing prompt.
 func (m Model) viewSplash() string {
 	t := m.now().Sub(m.born).Seconds()
 	phase := t / 3
 	stops := m.th.Brand.Stops
 
-	logo := kit.Wordmark("BULLETIN", stops, kit.Dim(kit.At(stops, 0.4), 0.78), phase)
+	logo := kit.Wordmark("BULLETIN", stops, phase)
 
 	tagline := "a message board for people with keys"
 	typed := int(math.Min(float64(len(tagline)), math.Max(0, (t-0.35)*34)))
@@ -34,9 +34,16 @@ func (m Model) viewSplash() string {
 		prompt = kit.S(glow).Render("press any key to begin")
 	}
 
-	orbs := kit.SideBySide(18,
-		kit.Orb(4, kit.At(stops, 0), kit.At(stops, 0.3), m.th.BgTop),
-		kit.Orb(3, kit.At(stops, 0.6), kit.At(stops, 1), m.th.BgTop),
+	// The block's height does not depend on the orbs' colors, so lay it out
+	// first: each orb's rim must fade into the backdrop at the rows it
+	// actually occupies, or it wears a ring of darker pixels.
+	const orbRows, orbGap = 4, 18
+	height := orbRows + 1 + lipgloss.Height(logo) + 1 + 1 + 2 + 1
+	top := max(0, (m.h-height)/2-1)
+	bg := m.th.Backdrop(top+orbRows/2, m.h)
+	orbs := kit.SideBySide(orbGap,
+		kit.Orb(4, kit.At(stops, 0), kit.At(stops, 0.3), bg),
+		kit.Orb(3, kit.At(stops, 0.6), kit.At(stops, 1), bg),
 	)
 
 	content := []string{
@@ -45,7 +52,5 @@ func (m Model) viewSplash() string {
 		kit.Center(line, m.w), "", "",
 		kit.Center(prompt, m.w),
 	}
-	block := strings.Join(content, "\n")
-	top := max(0, (m.h-lipgloss.Height(block))/2-1)
-	return strings.Repeat("\n", top) + block
+	return strings.Repeat("\n", top) + strings.Join(content, "\n")
 }

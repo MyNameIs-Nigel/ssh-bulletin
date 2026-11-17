@@ -164,7 +164,7 @@ func (m Model) viewIdentity(edit bool) string {
 
 	if !edit {
 		shimmer := float64(m.frame) / 60
-		b.WriteString(kit.Center(kit.Wordmark("BULLETIN", m.th.Brand.Stops, kit.Dim(m.th.Brand.Stops[1], 0.75), shimmer), m.w) + "\n\n")
+		b.WriteString(kit.Center(kit.Wordmark("BULLETIN", m.th.Brand.Stops, shimmer), m.w) + "\n\n")
 		b.WriteString(kit.Center(kit.Gradient("make your mark", lipgloss.NewStyle().Bold(true), m.th.Brand.Stops, shimmer), m.w) + "\n")
 		b.WriteString(kit.Center(kit.S(m.th.Muted).Render("Your SSH key is your account — no password, no email, nothing to forget."), m.w) + "\n\n")
 	} else {

@@ -97,7 +97,9 @@ func (m Model) masthead() string {
 	dot := kit.S(kit.Lerp(m.th.Good, m.th.BgTop, 0.35*kit.Pulse(time.Duration(m.frame)*time.Second/kit.FrameRate, 2*time.Second))).Render("●")
 	right := dot + kit.S(m.th.Subtle).Render(fmt.Sprintf(" %d online ", online))
 	if m.acct != nil {
-		right += " " + kit.GradientChip(" "+m.acct.Handle+" ", kit.PaletteNamed(m.acct.Palette).Stops) + " "
+		// The handle wears its palette as ink rather than as a filled tag: a
+		// filled cell can only have square corners in a terminal.
+		right += "  " + kit.GradientBold(m.acct.Handle, kit.PaletteNamed(m.acct.Palette).Stops) + " "
 	}
 
 	lw, mw, rw := lipgloss.Width(brand), lipgloss.Width(mid), lipgloss.Width(right)
@@ -113,19 +115,19 @@ func (m Model) masthead() string {
 	} else {
 		row = kit.Fit(brand+"   "+mid, m.w-rw-1) + " " + right
 	}
-	rule := kit.FadeRule(m.w, "━", kit.At(acc, 0.5), m.th.BgTop)
-	if m.ticking {
-		// While anything is moving, the rule flows too.
-		rule = kit.Rule(m.w, "━", fadeEnds(acc, m.th), float64(m.frame)/90)
-	}
-	return kit.Fit(row, m.w) + "\n" + rule
+	return kit.Fit(row, m.w) + "\n" + kit.GlowRule(m.w, "━", acc, m.th.Backdrop(1, m.h), m.sweep())
 }
 
-// fadeEnds wraps a gradient so it dissolves into the backdrop at both ends.
-func fadeEnds(stops []colorT, th kit.Theme) []colorT {
-	out := []colorT{th.BgTop}
-	out = append(out, stops...)
-	return append(out, th.BgTop)
+// sweep is where the masthead rule's highlight is after a focus change: it
+// crosses once, left to right, on the same clock as the panel border flow.
+// It starts and ends off the rule, so the rule never jumps when it stops.
+func (m Model) sweep() float64 {
+	since := m.now().Sub(m.focusAt)
+	if since >= focusFlow {
+		return 1
+	}
+	t := since.Seconds() / focusFlow.Seconds()
+	return 1 - math.Pow(1-t, 3)
 }
 
 // footer shows the current screen's key hints and any flash message.

@@ -2,6 +2,7 @@ package kit
 
 import (
 	"image/color"
+	"math"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -54,6 +55,38 @@ func FadeRule(width int, ch string, c, bg color.Color) string {
 	return Rule(width, ch, stops, 0)
 }
 
+// GlowRule draws a width-wide rule along stops that dissolves into bg at
+// both ends, with a bright highlight crossing it. sweep runs 0..1: the
+// highlight enters from the left at 0 and has left on the right by 1, so
+// sweep 0 and sweep 1 draw the same resting rule and an animation that ends
+// on either never jumps.
+func GlowRule(width int, ch string, stops []color.Color, bg color.Color, sweep float64) string {
+	if width <= 0 {
+		return ""
+	}
+	const band = 0.18 // highlight half-width, as a fraction of the rule
+	fade := max(1, min(width/6, 16))
+	center := -band + sweep*(1+2*band)
+	var b strings.Builder
+	n := float64(max(width-1, 1))
+	for i := range width {
+		x := float64(i) / n
+		c := At(stops, x)
+		if d := math.Abs(x-center) / band; d < 1 {
+			k := (1 - d) * (1 - d)
+			c = Lerp(c, Lift(c, 0.6), k)
+		}
+		// Ease into the backdrop over the last few cells at each end.
+		edge := min(i, width-1-i)
+		if edge < fade {
+			e := float64(edge+1) / float64(fade+1)
+			c = Lerp(bg, c, e*e*(3-2*e))
+		}
+		b.WriteString(lipgloss.NewStyle().Foreground(c).Render(ch))
+	}
+	return b.String()
+}
+
 // Bar paints a width-wide background gradient with text laid over it, ink
 // chosen per cell for contrast. Used for selected rows and chips.
 func Bar(text string, width int, stops []color.Color, bold bool) string {
@@ -83,12 +116,6 @@ func Chip(text string, fill color.Color, bold bool) string {
 	cap := lipgloss.NewStyle().Foreground(fill)
 	body := lipgloss.NewStyle().Background(fill).Foreground(Ink(fill)).Bold(bold)
 	return cap.Render("▐") + body.Render(text) + cap.Render("▌")
-}
-
-// GradientChip is a Chip whose fill flows along stops.
-func GradientChip(text string, stops []color.Color) string {
-	w := lipgloss.Width(text)
-	return S(At(stops, 0)).Render("▐") + Bar(text, w, stops, true) + S(At(stops, 1)).Render("▌")
 }
 
 func graphemes(s string) []string {
