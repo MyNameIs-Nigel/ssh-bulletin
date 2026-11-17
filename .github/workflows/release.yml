@@ -1,0 +1,102 @@
+name: Release
+
+# test -> publish, and stop. There is deliberately NO deploy job yet: the
+# ssharcade-deploy role's OIDC trust policy does not list this repository
+# (its `sub` claim pins repo IDs — see the workspace CLAUDE.md), and the
+# bulletin is not in the fleet compose. Add the SSM deploy job, mirroring
+# ssh-farm's, only after both of those land. docs/01-arcade-onboarding.md.
+
+on:
+  release:
+    types: [published]
+
+concurrency:
+  group: release-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - id: release
+        name: Validate release tag and main ancestry
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::Release tag must be vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          git fetch origin main
+          git merge-base --is-ancestor HEAD origin/main
+          test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$(git rev-parse HEAD)"
+          echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+
+  verify:
+    needs: release
+    uses: ./.github/workflows/verify.yml
+    with:
+      test-count: 2
+      build-image: false # publish builds it for real
+
+  publish:
+    name: publish image
+    needs: [release, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # provenance attestation
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        run: echo "sha_short=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          labels: |
+            org.opencontainers.image.version=v${{ needs.release.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          build-args: |
+            VERSION=${{ needs.release.outputs.version }}
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          sbom: true
+          provenance: mode=max
+          tags: |
+            ghcr.io/mynameis-nigel/ssh-bulletin:latest
+            ghcr.io/mynameis-nigel/ssh-bulletin:${{ steps.meta.outputs.sha_short }}
+            ghcr.io/mynameis-nigel/ssh-bulletin:v${{ needs.release.outputs.version }}
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/mynameis-nigel/ssh-bulletin
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: scan published image
+        run: |
+          docker run --rm aquasec/trivy:latest image \
+            --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed \
+            ghcr.io/mynameis-nigel/ssh-bulletin@${{ steps.build.outputs.digest }}

@@ -1,0 +1,325 @@
+// Package tui is the bulletin's interface, built entirely from internal/tui/kit.
+//
+// Shape: one root Model owns the screen stack (splash → onboarding or home →
+// board → thread), the overlays (compose, command palette, help), toasts,
+// and a single animation loop that runs only while something is moving.
+// Data loads and writes are tea.Cmds, so the UI never blocks on SQLite, and
+// live posts from other sessions arrive as messages from the broker.
+package tui
+
+import (
+	"context"
+	"image/color"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/mynameis-nigel/ssh-bulletin/internal/board"
+	"github.com/mynameis-nigel/ssh-bulletin/internal/tui/kit"
+)
+
+// Deps is everything a session's UI needs from the server.
+type Deps struct {
+	Service     *board.Service
+	Fingerprint string
+	PublicKey   string
+	Suggested   string // SSH username, offered as a first-run handle
+	Account     *board.Account
+	Events      <-chan board.Event
+	Width       int
+	Height      int
+	IdleTimeout time.Duration
+	Context     context.Context
+	Now         func() time.Time // tests pin the clock
+	NoSplash    bool             // tests skip straight past the splash
+}
+
+type screen int
+
+const (
+	scrSplash screen = iota
+	scrOnboard
+	scrHome
+	scrBoard
+	scrThread
+	scrProfile
+)
+
+type overlayKind int
+
+const (
+	ovNone overlayKind = iota
+	ovCompose
+	ovPalette
+	ovHelp
+)
+
+// Model is the root Bubble Tea model.
+type Model struct {
+	d   Deps
+	th  kit.Theme
+	w   int
+	h   int
+	now func() time.Time
+
+	acct   *board.Account
+	screen screen
+
+	// Accent cross-fade between places (brand → board palette → ...).
+	accentFrom []color.Color
+	accentTo   []color.Color
+	accentT    float64
+
+	// Animation loop.
+	gen       int
+	ticking   bool
+	frame     int
+	born      time.Time
+	lastFrame time.Time
+	focusAt   time.Time // when focus last changed: borders flow briefly
+	lastInput time.Time
+
+	// Data.
+	stats      board.Stats
+	boards     []board.Board
+	boardMenu  kit.Menu
+	curBoard   board.Board
+	threads    []board.Thread
+	threadMenu kit.Menu
+	previews   map[int64][]board.Post   // board screen: opening posts by thread
+	peek       map[int64][]board.Thread // home screen: recent threads by board
+	curThread  board.Thread
+	posts      []board.Post
+	postCursor int
+	postTop    int // first visible line of the thread view
+	loading    bool
+
+	// Identity form (onboarding and profile editing).
+	form identityForm
+
+	// Overlays.
+	overlay  overlayKind
+	overlayT float64 // 0..1 open animation
+	compose  composeState
+	pal      paletteState
+
+	toasts  kit.Toasts
+	flash   string // one-line status message in the footer
+	flashAt time.Time
+}
+
+// New builds the model for one session.
+func New(d Deps) Model {
+	if d.Now == nil {
+		d.Now = time.Now
+	}
+	if d.Context == nil {
+		d.Context = context.Background()
+	}
+	now := d.Now()
+	m := Model{
+		d:          d,
+		th:         kit.Midnight,
+		w:          max(d.Width, 1),
+		h:          max(d.Height, 1),
+		now:        d.Now,
+		acct:       d.Account,
+		screen:     scrSplash,
+		accentFrom: kit.Midnight.Brand.Stops,
+		accentTo:   kit.Midnight.Brand.Stops,
+		accentT:    1,
+		born:       now,
+		lastFrame:  now,
+		focusAt:    now,
+		lastInput:  now,
+		previews:   map[int64][]board.Post{},
+		peek:       map[int64][]board.Thread{},
+		boardMenu:  kit.NewMenu(nil),
+		threadMenu: kit.NewMenu(nil),
+	}
+	m.form = newIdentityForm(m.th, d.Suggested, m.acct)
+	m.compose = newCompose(m.th)
+	m.pal = newPalette(m.th)
+	if d.NoSplash {
+		m.leaveSplash()
+	}
+	return m
+}
+
+// accent is the current (possibly mid-fade) accent gradient.
+func (m Model) accent() []color.Color {
+	if m.accentT >= 1 {
+		return m.accentTo
+	}
+	return kit.MixStops(m.accentFrom, m.accentTo, smooth(m.accentT))
+}
+
+// setAccent starts a cross-fade toward stops.
+func (m *Model) setAccent(stops []color.Color) {
+	m.accentFrom = m.accent()
+	m.accentTo = stops
+	m.accentT = 0
+}
+
+func smooth(t float64) float64 { return t * t * (3 - 2*t) }
+
+// myStops is the signed-in user's palette (brand if none yet).
+func (m Model) myStops() []color.Color {
+	if m.acct == nil {
+		return kit.PaletteNamed(m.form.palette().Name).Stops
+	}
+	return kit.PaletteNamed(m.acct.Palette).Stops
+}
+
+// Init starts the event listener, the clock, and the splash animation.
+func (m Model) Init() tea.Cmd {
+	cmds := []tea.Cmd{waitEvent(m.d.Events), clockTick(), loadHome(m.d)}
+	if m.screen == scrSplash || m.screen == scrOnboard {
+		cmds = append(cmds, kit.Frame(m.gen))
+	}
+	return tea.Batch(cmds...)
+}
+
+// animating reports whether anything on screen is still moving.
+func (m Model) animating() bool {
+	now := m.now()
+	switch {
+	case (m.screen == scrSplash || m.screen == scrOnboard) && now.Sub(m.lastInput) < ambientFlow:
+		// The splash and onboarding shimmer, but only for a while after the
+		// last keypress: someone who walks away from onboarding must not
+		// stream 20 fps until the idle timeout. The next key restarts it.
+		return true
+	case m.accentT < 1, m.overlay != ovNone && m.overlayT < 1, m.overlay == ovNone && m.overlayT > 0:
+		return true
+	case m.boardMenu.Animating(), m.threadMenu.Animating(), m.toasts.Animating():
+		return true
+	case now.Sub(m.focusAt) < focusFlow:
+		return true
+	case m.loading:
+		return true
+	}
+	return false
+}
+
+// focusFlow is how long a newly focused border keeps flowing.
+const focusFlow = 1600 * time.Millisecond
+
+// ambientFlow is how long the splash and onboarding keep animating after the
+// last input before settling on a still frame. It must exceed splashLength,
+// or a returning player is never carried past the splash.
+const ambientFlow = 8 * time.Second
+
+// ensureTicking starts the frame loop if it is not running.
+func (m *Model) ensureTicking() tea.Cmd {
+	if m.ticking || !m.animating() {
+		return nil
+	}
+	m.ticking = true
+	m.gen++
+	m.lastFrame = m.now()
+	return kit.Frame(m.gen)
+}
+
+// touchFocus marks a focus change so borders flow for a moment.
+func (m *Model) touchFocus() { m.focusAt = m.now() }
+
+// ---- messages ----------------------------------------------------------
+
+type homeMsg struct {
+	boards []board.Board
+	stats  board.Stats
+	err    error
+}
+type threadsMsg struct {
+	boardID int64
+	threads []board.Thread
+	err     error
+}
+type previewMsg struct {
+	threadID int64
+	posts    []board.Post
+}
+type postsMsg struct {
+	thread board.Thread
+	posts  []board.Post
+	err    error
+	focus  int64 // post id to put the cursor on, if any
+}
+type eventMsg board.Event
+type eventsClosedMsg struct{}
+type clockMsg struct{}
+type registeredMsg struct {
+	acct board.Account
+	err  error
+}
+type postedMsg struct {
+	threadID int64
+	postID   int64
+	err      error
+}
+type kudosMsg struct{ err error }
+
+// ---- commands ----------------------------------------------------------
+
+func waitEvent(ch <-chan board.Event) tea.Cmd {
+	if ch == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		ev, ok := <-ch
+		if !ok {
+			return eventsClosedMsg{}
+		}
+		return eventMsg(ev)
+	}
+}
+
+func clockTick() tea.Cmd {
+	return tea.Tick(15*time.Second, func(time.Time) tea.Msg { return clockMsg{} })
+}
+
+func loadHome(d Deps) tea.Cmd {
+	return func() tea.Msg {
+		bs, err := d.Service.Boards(d.Context)
+		if err != nil {
+			return homeMsg{err: err}
+		}
+		st, err := d.Service.Stats(d.Context)
+		return homeMsg{boards: bs, stats: st, err: err}
+	}
+}
+
+func loadThreads(d Deps, boardID int64) tea.Cmd {
+	return func() tea.Msg {
+		ts, err := d.Service.Threads(d.Context, boardID)
+		return threadsMsg{boardID: boardID, threads: ts, err: err}
+	}
+}
+
+func loadPreview(d Deps, threadID int64) tea.Cmd {
+	return func() tea.Msg {
+		ps, _ := d.Service.Posts(d.Context, threadID, 0)
+		if len(ps) > 1 {
+			ps = ps[:1]
+		}
+		return previewMsg{threadID: threadID, posts: ps}
+	}
+}
+
+func loadPosts(d Deps, threadID, viewer, focus int64) tea.Cmd {
+	return func() tea.Msg {
+		t, err := d.Service.Thread(d.Context, threadID)
+		if err != nil {
+			return postsMsg{err: err}
+		}
+		ps, err := d.Service.Posts(d.Context, threadID, viewer)
+		return postsMsg{thread: t, posts: ps, err: err, focus: focus}
+	}
+}
+
+func (m Model) viewerID() int64 {
+	if m.acct == nil {
+		return 0
+	}
+	return m.acct.ID
+}
