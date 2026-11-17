@@ -10,7 +10,7 @@ on:
         type: number
         default: 2
       build-image:
-        description: Build the container image (without pushing it).
+        description: Build and smoke-test the container without publishing it.
         type: boolean
         default: true
 
@@ -23,17 +23,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
+          cache-dependency-path: |
+            go.sum
+            build/litestream/go.sum
+      - name: Check workflows
+        run: |
+          GOBIN="$RUNNER_TEMP/bin" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          "$RUNNER_TEMP/bin/actionlint"
+      - name: Check rollout scripts
+        run: |
+          shellcheck entrypoint.sh scripts/ci/smoke-image.sh scripts/deploy/remote-deploy.sh
+          python3 scripts/deploy/test_deploy.py
       - name: gofmt
         run: |
           unformatted=$(gofmt -l .)
           if [ -n "$unformatted" ]; then
             echo "::error::these files are not gofmt-clean"
-            echo "$unformatted" | sed 's/^/  /'
+            printf '%s\n' "$unformatted"
             exit 1
           fi
       - name: go vet
@@ -41,6 +54,9 @@ jobs:
       - name: go.mod is tidy
         run: go mod tidy -diff
       - name: module checksums verify
+        run: go mod verify
+      - name: Verify Litestream module checksums
+        working-directory: build/litestream
         run: go mod verify
       - name: build
         run: go build ./...
@@ -50,8 +66,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
@@ -65,18 +83,24 @@ jobs:
           fi
 
   image:
-    name: image builds
+    name: container smoke test
     if: ${{ inputs.build-image }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          push: false
+          platforms: linux/amd64
+          load: true
+          provenance: false
+          tags: ssh-bulletin:ci
           build-args: |
             VERSION=0.0.0-ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - run: scripts/ci/smoke-image.sh ssh-bulletin:ci 0.0.0-ci

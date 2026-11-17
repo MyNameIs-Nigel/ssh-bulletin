@@ -103,7 +103,6 @@ func startServer(t *testing.T) fixture {
 
 // session is one interactive connection, as the router opens it.
 type session struct {
-	client *gossh.Client
 	sess   *gossh.Session
 	stdin  io.WriteCloser
 	mu     sync.Mutex
@@ -137,7 +136,7 @@ func dial(t *testing.T, addr, user string, auth gossh.Signer, playerKey gossh.Pu
 	}
 	stdin, _ := sess.StdinPipe()
 	stdout, _ := sess.StdoutPipe()
-	s := &session{client: client, sess: sess, stdin: stdin}
+	s := &session{sess: sess, stdin: stdin}
 	go func() {
 		buf := make([]byte, 4096)
 		for {
@@ -268,12 +267,16 @@ func TestUntrustedKeyCannotForge(t *testing.T) {
 // TestBannerCarriesVersion: the router's prober reads the version from the
 // SSH banner.
 func TestBannerCarriesVersion(t *testing.T) {
-	old := version.Version
-	version.Version = "9.8.7"
-	t.Cleanup(func() { version.Version = old })
 	f := startServer(t)
-	s := dial(t, f.addr, "probe", signer(t), nil)
-	if got := string(s.client.ServerVersion()); got != "SSH-2.0-9.8.7" {
-		t.Fatalf("banner = %q", got)
+	client, err := gossh.Dial("tcp", f.addr, &gossh.ClientConfig{
+		User: "probe", Auth: []gossh.AuthMethod{gossh.PublicKeys(signer(t))},
+		HostKeyCallback: gossh.InsecureIgnoreHostKey(), Timeout: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if got, want := string(client.ServerVersion()), "SSH-2.0-"+version.Version; got != want {
+		t.Fatalf("banner = %q, want %q", got, want)
 	}
 }
