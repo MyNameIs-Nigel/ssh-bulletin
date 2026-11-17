@@ -10,7 +10,6 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/mynameis-nigel/ssh-bulletin/internal/tui/kit"
-	"github.com/mynameis-nigel/ssh-bulletin/internal/version"
 )
 
 // Minimum usable terminal. Below this, a friendly resize card replaces the UI.
@@ -134,7 +133,7 @@ func (m Model) sweep() float64 {
 func (m Model) footer() string {
 	hints := m.hints()
 	left := " " + kit.Hints(hints, m.th, m.accent(), m.w-24)
-	right := kit.S(m.th.Faint).Render(versionLabel() + " ")
+	right := kit.S(m.th.Faint).Render(versionLabel(m.d.Version) + " ")
 	if m.flash != "" && m.now().Sub(m.flashAt) < 6*time.Second {
 		right = kit.S(m.th.Warn).Render(m.flash+" ") + right
 	}
@@ -145,11 +144,11 @@ func (m Model) footer() string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
-func versionLabel() string {
-	if version.Version == "dev" {
+func versionLabel(v string) string {
+	if v == "" || v == "dev" {
 		return "dev build"
 	}
-	return "v" + version.Version
+	return "v" + v
 }
 
 func (m Model) hints() []kit.Hint {

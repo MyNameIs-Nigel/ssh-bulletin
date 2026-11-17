@@ -32,6 +32,7 @@ type Deps struct {
 	Context     context.Context
 	Now         func() time.Time // tests pin the clock
 	NoSplash    bool             // tests skip straight past the splash
+	Version     string           // build version for the footer; "" or "dev" shows "dev build"
 }
 
 type screen int
