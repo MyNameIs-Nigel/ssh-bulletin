@@ -168,3 +168,105 @@ func TestSplashKeepsAnimatingUntilAKey(t *testing.T) {
 		}
 	}
 }
+
+// An empty board shows the cat. Three seconds after it appears the cat shuts
+// its eyes for 350ms, then does so every five seconds; the frame loop wakes
+// only for the blink.
+func TestEmptyBoardCatBlinks(t *testing.T) {
+	svc, _ := testService(t)
+	acct, _, _ := svc.Lookup(context.Background(), "SHA256:demo-0")
+	now := fixedNow
+	m := New(Deps{Service: svc, Fingerprint: acct.Fingerprint, Account: &acct, Width: 100, Height: 30,
+		Now: func() time.Time { return now }, NoSplash: true})
+	m = drive(t, m, tea.WindowSizeMsg{Width: 100, Height: 30}, key("enter"))
+	// The board is opened a minute into the session: blinks count from
+	// arrival, not from connecting.
+	const arrive = time.Minute
+	now = fixedNow.Add(arrive)
+	next, cmd := m.Update(threadsMsg{boardID: m.curBoard.ID})
+	m = next.(Model)
+	if cmd == nil || !m.onEmptyBoard() || m.emptyAt != now {
+		t.Fatalf("empty board not registered: cmd=%v empty=%v at=%v", cmd != nil, m.onEmptyBoard(), m.emptyAt)
+	}
+	m.accentT = 1
+	m.focusAt = now.Add(-time.Hour)
+	m.boardMenu.Snap()
+	m.threadMenu.Snap()
+
+	view := func(at time.Duration) string {
+		now = fixedNow.Add(arrive + at)
+		return ansi.Strip(m.View().Content)
+	}
+	for _, c := range []struct {
+		at    time.Duration
+		blink bool
+	}{
+		{0, false}, {time.Second, false}, {2900 * time.Millisecond, false},
+		{3 * time.Second, true}, {3200 * time.Millisecond, true}, {3340 * time.Millisecond, true}, {3400 * time.Millisecond, false},
+		{5 * time.Second, false}, {7900 * time.Millisecond, false},
+		{8 * time.Second, true}, {8300 * time.Millisecond, true}, {8400 * time.Millisecond, false},
+		{13100 * time.Millisecond, true},
+	} {
+		out := view(c.at)
+		for _, want := range []string{"The board is empty!", `/\_/\`, "> ^ <"} {
+			if !strings.Contains(out, want) {
+				t.Fatalf("at %v: missing %q:\n%s", c.at, want, out)
+			}
+		}
+		if strings.Contains(out, "A quiet board") {
+			t.Errorf("at %v: old empty-state heading is still there", c.at)
+		}
+		open, shut := strings.Contains(out, "( o.o )"), strings.Contains(out, "( -.- )")
+		if c.blink && !(shut && !open) || !c.blink && !(open && !shut) {
+			t.Errorf("at %v: blink=%v but eyes open=%v shut=%v", c.at, c.blink, open, shut)
+		}
+		if got := m.animating(); got != c.blink {
+			t.Errorf("at %v: animating=%v, want %v (only the blink needs frames)", c.at, got, c.blink)
+		}
+	}
+	// The timer aims at the next blink, not at a fixed interval.
+	for at, want := range map[time.Duration]time.Duration{
+		0: 3 * time.Second, time.Second: 2 * time.Second, 4 * time.Second: 4 * time.Second, 6 * time.Second: 2 * time.Second,
+	} {
+		now = fixedNow.Add(arrive + at)
+		if got := m.untilBlink(); got != want {
+			t.Errorf("at %v: next blink in %v, want %v", at, got, want)
+		}
+	}
+}
+
+// A stale timer (from an earlier visit) must not keep a loop alive, and a
+// board that gains a thread stops blinking.
+func TestBlinkTimersAreRetired(t *testing.T) {
+	svc, _ := testService(t)
+	acct, _, _ := svc.Lookup(context.Background(), "SHA256:demo-0")
+	m := New(Deps{Service: svc, Fingerprint: acct.Fingerprint, Account: &acct, Width: 100, Height: 30,
+		Now: func() time.Time { return fixedNow }, NoSplash: true})
+	m = drive(t, m, tea.WindowSizeMsg{Width: 100, Height: 30}, key("enter"))
+	next, _ := m.Update(threadsMsg{boardID: m.curBoard.ID})
+	m = next.(Model)
+	gen := m.blinkGen
+	if gen == 0 {
+		t.Fatal("no blink timer started for an empty board")
+	}
+	// A refresh that is still empty keeps the same timer.
+	next, cmd := m.Update(threadsMsg{boardID: m.curBoard.ID})
+	m = next.(Model)
+	if m.blinkGen != gen {
+		t.Errorf("an empty refresh replaced the timer: %d → %d", gen, m.blinkGen)
+	}
+	_ = cmd
+	// The live timer reschedules; a stale one does not.
+	if _, c := m.Update(blinkMsg{gen: gen}); c == nil {
+		t.Error("the live timer did not reschedule")
+	}
+	if _, c := m.Update(blinkMsg{gen: gen - 1}); c != nil {
+		t.Error("a stale timer rescheduled itself")
+	}
+	// Leaving for another visit restarts the clock with a new timer.
+	m.screen = scrHome
+	m.emptyAt = time.Time{}
+	if _, c := m.Update(blinkMsg{gen: gen}); c != nil {
+		t.Error("a timer outlived the empty board")
+	}
+}

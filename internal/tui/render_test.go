@@ -62,7 +62,7 @@ func drive(t *testing.T, m Model, msgs ...tea.Msg) Model {
 			next, cmd := m.Update(eventMsg(msg))
 			m = next.(Model)
 			run(cmd)
-		case eventMsg, clockMsg, kit.FrameMsg:
+		case eventMsg, clockMsg, blinkMsg, kit.FrameMsg:
 		default:
 			next, cmd := m.Update(msg)
 			m = next.(Model)

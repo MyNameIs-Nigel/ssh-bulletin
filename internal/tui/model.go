@@ -78,6 +78,8 @@ type Model struct {
 	lastFrame time.Time
 	focusAt   time.Time // when focus last changed: borders flow briefly
 	lastInput time.Time
+	emptyAt   time.Time // when the board in view became empty; zero if it is not
+	blinkGen  int       // identifies the live blink timer; stale ones are dropped
 
 	// Data.
 	stats      board.Stats
@@ -194,6 +196,8 @@ func (m Model) animating() bool {
 		// someone who walks away from it must not stream 20 fps until the
 		// idle timeout. The next key restarts it.
 		return true
+	case m.onEmptyBoard() && m.blinking():
+		return true
 	case m.accentT < 1, m.overlay != ovNone && m.overlayT < 1, m.overlay == ovNone && m.overlayT > 0:
 		return true
 	case m.boardMenu.Animating(), m.threadMenu.Animating(), m.toasts.Animating():
@@ -252,6 +256,7 @@ type postsMsg struct {
 type eventMsg board.Event
 type eventsClosedMsg struct{}
 type clockMsg struct{}
+type blinkMsg struct{ gen int }
 type registeredMsg struct {
 	acct board.Account
 	err  error
@@ -326,4 +331,44 @@ func (m Model) viewerID() int64 {
 		return 0
 	}
 	return m.acct.ID
+}
+
+// The empty-board cat first blinks blinkFirst after the empty board appears,
+// then every blinkEvery, shutting its eyes for blinkFor. Blinking is a pure
+// function of the clock; a timer aimed at each blink wakes the frame loop
+// just for it, so the resting cat costs no frames at all.
+const (
+	blinkFirst = 3 * time.Second
+	blinkEvery = 5 * time.Second
+	blinkFor   = 350 * time.Millisecond
+)
+
+// onEmptyBoard reports whether the board screen is showing its empty state.
+func (m Model) onEmptyBoard() bool {
+	return m.screen == scrBoard && !m.loading && len(m.threads) == 0
+}
+
+// untilBlink is how long until the next blink starts, counted from when the
+// empty board appeared (zero while one is under way).
+func (m Model) untilBlink() time.Duration {
+	e := m.now().Sub(m.emptyAt)
+	if e < blinkFirst {
+		return blinkFirst - e
+	}
+	return (blinkEvery - (e-blinkFirst)%blinkEvery) % blinkEvery
+}
+
+// blinking reports whether the cat's eyes are shut right now.
+func (m Model) blinking() bool {
+	if m.emptyAt.IsZero() {
+		return false
+	}
+	e := m.now().Sub(m.emptyAt)
+	return e >= blinkFirst && (e-blinkFirst)%blinkEvery < blinkFor
+}
+
+// blinkTick fires just after the next blink begins.
+func (m Model) blinkTick() tea.Cmd {
+	gen := m.blinkGen
+	return tea.Tick(m.untilBlink()+20*time.Millisecond, func(time.Time) tea.Msg { return blinkMsg{gen: gen} })
 }
