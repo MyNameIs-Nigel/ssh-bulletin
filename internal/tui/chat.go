@@ -3,10 +3,12 @@ package tui
 import (
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/mynameis-nigel/ssh-bulletin/internal/board"
 	"github.com/mynameis-nigel/ssh-bulletin/internal/tui/kit"
@@ -43,6 +45,7 @@ type chatState struct {
 	offset       int // lines scrolled up from the bottom; 0 follows new messages
 	unread       int // messages that arrived below a reader scrolled up
 	sel          int // message selected while browsing; -1 while typing
+	link         int // link focused within the selected message, or -1
 	input        textinput.Model
 	sending      bool
 	err          string
@@ -62,6 +65,7 @@ type chatLoadedMsg struct {
 	msgs    []board.ChatMessage
 	more    bool
 	err     error
+	refs    board.Refs
 }
 
 type chatSentMsg struct {
@@ -91,7 +95,7 @@ func (m *Model) resetChat(boardID int64) tea.Cmd {
 	if m.chat.boardID == boardID && m.chat.request != 0 {
 		return m.refreshChat()
 	}
-	m.chat = chatState{boardID: boardID, request: m.chat.request + 1, sel: -1, input: newChatInput()}
+	m.chat = chatState{boardID: boardID, request: m.chat.request + 1, sel: -1, link: -1, input: newChatInput()}
 	return m.loadChat(chatReplace, 0, board.ChatPage)
 }
 
@@ -104,6 +108,11 @@ func (m Model) loadChat(mode chatLoadMode, cursor int64, limit int) tea.Cmd {
 		} else {
 			out.msgs, out.more, out.err = d.Service.ChatHistory(d.Context, boardID, cursor, limit)
 		}
+		bodies := make([]string, len(out.msgs))
+		for i, c := range out.msgs {
+			bodies[i] = c.Body
+		}
+		out.refs, _ = d.Service.ResolveLines(d.Context, bodies...)
 		return out
 	}
 }
@@ -143,6 +152,7 @@ func (m *Model) receiveChat(msg chatLoadedMsg) tea.Cmd {
 	if msg.request != c.request {
 		return nil
 	}
+	m.mergeRefs(msg.refs)
 	if msg.err != nil {
 		switch msg.mode {
 		case chatOlder:
@@ -205,7 +215,7 @@ func (m *Model) receiveChat(msg chatLoadedMsg) tea.Cmd {
 			// Keep the reader's place: the new lines land below the view.
 			w, _ := m.chatGeom()
 			for i := from; i < len(c.msgs); i++ {
-				c.offset += len(m.chatBlock(i, w, false))
+				c.offset += len(m.chatBlock(i, w, false, ""))
 			}
 			c.unread += len(fresh)
 		}
@@ -249,6 +259,9 @@ func (m *Model) reselectChat(id int64) {
 		return 0
 	})
 	c.sel = min(i, len(c.msgs)-1)
+	if c.msgs[c.sel].ID != id {
+		c.link = -1
+	}
 }
 
 // dropChat forgets a deleted or removed message.
@@ -343,21 +356,52 @@ func (m *Model) updateChat(msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
+// updateChatBrowse handles keys while a message is selected. Tab walks the
+// message's links and then returns to typing, like focus moving through a
+// page: input → message → its links → input.
 func (m *Model) updateChatBrowse(k tea.KeyPressMsg) tea.Cmd {
 	c := &m.chat
+	links := m.lineLinks(c.msgs[c.sel].Body)
 	switch k.String() {
-	case "esc", "tab", "shift+tab", "i":
+	case "tab":
+		if c.link+1 < len(links) {
+			c.link++
+			return nil
+		}
+		m.stopBrowsing()
+		return nil
+	case "shift+tab":
+		if c.link >= 0 {
+			c.link--
+			return nil
+		}
+		m.stopBrowsing()
+		return nil
+	case "esc":
+		if c.link >= 0 {
+			c.link = -1
+			return nil
+		}
+		m.stopBrowsing()
+		return nil
+	case "i":
 		m.stopBrowsing()
 		return nil
 	case "up", "k":
-		c.sel = max(0, c.sel-1)
+		c.sel, c.link = max(0, c.sel-1), -1
 	case "down", "j":
-		c.sel = min(len(c.msgs)-1, c.sel+1)
+		c.sel, c.link = min(len(c.msgs)-1, c.sel+1), -1
 	case "home", "g":
-		c.sel = 0
+		c.sel, c.link = 0, -1
 	case "end", "G":
-		c.sel = len(c.msgs) - 1
-	case "enter", "o":
+		c.sel, c.link = len(c.msgs)-1, -1
+	case "enter":
+		if c.link >= 0 && c.link < len(links) {
+			return m.follow(links[c.link])
+		}
+		m.openChatOptions()
+		return nil
+	case "o":
 		m.openChatOptions()
 		return nil
 	case "v":
@@ -385,7 +429,7 @@ func (m *Model) startBrowsing() {
 	w, mh := m.chatGeom()
 	lines, first, starts, _ := m.chatTail(w, c.offset+mh, -1)
 	bottom := len(lines) - c.offset
-	c.sel = len(c.msgs) - 1
+	c.sel, c.link = len(c.msgs)-1, -1
 	for i := len(starts) - 1; i >= 0; i-- {
 		if starts[i] < bottom {
 			c.sel = first + i
@@ -396,7 +440,7 @@ func (m *Model) startBrowsing() {
 }
 
 func (m *Model) stopBrowsing() {
-	m.chat.sel = -1
+	m.chat.sel, m.chat.link = -1, -1
 	if m.screen == scrChat {
 		m.chat.input.Focus()
 	}
@@ -599,7 +643,7 @@ func (m Model) chatStartsGroup(i int) bool {
 
 // chatBlock renders message i at width w: a spacer and author header when it
 // starts a group, then its wrapped text. The selected message wears a rail.
-func (m Model) chatBlock(i, w int, selected bool) []string {
+func (m Model) chatBlock(i, w int, selected bool, scope string) []string {
 	c := m.chat.msgs[i]
 	astops := kit.PaletteNamed(c.AuthorPalette).Stops
 	tw := max(1, w-2)
@@ -615,14 +659,11 @@ func (m Model) chatBlock(i, w int, selected bool) []string {
 		if i > 0 {
 			out = append(out, "")
 		}
-		head := kit.GradientBold(c.AuthorHandle, astops) + m.friendFlair(c.AuthorID) + staffFlair(c.AuthorRole, kit.At(astops, 0.7)) +
+		head := m.authorName(scope, c.AuthorID, c.AuthorHandle, astops) + m.friendFlair(c.AuthorID) + staffFlair(c.AuthorRole, kit.At(astops, 0.7)) +
 			kit.S(m.th.Muted).Render(" · "+kit.Ago(c.CreatedAt, m.now()))
 		rows = append(rows, kit.Fit(head, tw))
 	}
-	ink := kit.S(m.th.Text)
-	for _, l := range strings.Split(kit.Wrap(c.Body, tw), "\n") {
-		rows = append(rows, ink.Render(l))
-	}
+	rows = append(rows, m.richLine(c.Body, tw, richOpts{ink: kit.S(m.th.Text), accent: m.chatStops(), scope: scope})...)
 	for r, row := range rows {
 		out = append(out, rail(r, len(rows))+row)
 	}
@@ -634,11 +675,18 @@ func (m Model) chatBlock(i, w int, selected bool) []string {
 // the line where message first+k begins. When every held message fit,
 // complete is true and a banner heads the lines.
 func (m Model) chatTail(w, need, until int) (lines []string, first int, starts []int, complete bool) {
+	return m.chatTailIn(w, need, until, "chat")
+}
+
+// chatTailIn is chatTail with its hot spots in their own space, so the board
+// screen's preview of the chat and the chat screen never share keys.
+func (m Model) chatTailIn(w, need, until int, space string) (lines []string, first int, starts []int, complete bool) {
 	var blocks [][]string
 	n := 0
 	i := len(m.chat.msgs) - 1
 	for ; i >= 0 && (n < need || i >= until); i-- {
-		b := m.chatBlock(i, w, i == m.chat.sel)
+		scope := space + ":" + strconv.FormatInt(m.chat.msgs[i].ID, 10)
+		b := m.chatBlock(i, w, i == m.chat.sel && space == "chat", scope)
 		blocks = append(blocks, b)
 		n += len(b)
 	}
@@ -676,8 +724,8 @@ func (m Model) chatBanner(w int) []string {
 // chatWindow is the bottom-anchored slice of the chat that fits rows lines,
 // offset lines up from the newest. It also reports the scrollbar geometry
 // when the whole history held is known.
-func (m Model) chatWindow(w, rows, offset int) (view string, top, total int, known bool) {
-	lines, _, _, complete := m.chatTail(w, offset+rows, -1)
+func (m Model) chatWindow(w, rows, offset int, space string) (view string, top, total int, known bool) {
+	lines, _, _, complete := m.chatTailIn(w, offset+rows, -1, space)
 	end := max(0, len(lines)-offset)
 	start := max(0, end-rows)
 	vis := lines[start:end]
@@ -707,7 +755,7 @@ func (m Model) viewChat() string {
 	case c.failed:
 		msgs = kit.Block("\n"+kit.S(m.th.Bad).Render("✗ couldn't load this chat. Press esc and try again."), iw, rows)
 	default:
-		view, top, total, known := m.chatWindow(w, rows, c.offset)
+		view, top, total, known := m.chatWindow(w, rows, c.offset, "chat")
 		msgs = kit.Block(view, iw, rows)
 		if known && total > rows {
 			msgs = withScrollbar(msgs, top, rows, total, m.th, stops)
@@ -752,17 +800,24 @@ func (m Model) viewChatSection(r rect) string {
 		for i := max(0, len(c.msgs)-rows); i < len(c.msgs); i++ {
 			x := c.msgs[i]
 			name := kit.GradientBold(x.AuthorHandle, kit.PaletteNamed(x.AuthorPalette).Stops)
-			lines = append(lines, kit.Fit(name+"  "+kit.S(m.th.Subtle).Render(x.Body), iw))
+			lines = append(lines, kit.Fit(name+"  "+m.plainLine(x.Body, kit.S(m.th.Subtle)), iw))
 		}
 	}
 	for len(lines) < rows {
 		lines = append([]string{""}, lines...)
 	}
 	hint := kit.S(m.th.Faint).Render("tab to join the chat")
-	if m.chatFocus {
-		hint = kit.S(kit.At(stops, 0.4)).Bold(true).Render("⏎") + kit.S(m.th.Subtle).Render(" join the chat")
+	if lit := m.lit(chatSectionKey); m.chatFocus || lit {
+		hint = kit.Flow("⏎ join the chat", lipgloss.NewStyle().Bold(true), stops, lit, m.phase(), m.th)
 	}
-	return p.Render(strings.Join(append(lines, hint), "\n"))
+	// The whole section is one hot spot: its teaser lines are not links.
+	return m.hot(chatSectionKey, func(m *Model) tea.Cmd {
+		if m.chatFocus {
+			return m.openChat()
+		}
+		m.focusChatSection(true)
+		return nil
+	}, p.Render(strings.Join(append(lines, hint), "\n")))
 }
 
 // chatPreview fills the board screen's right pane while the chat section is
@@ -776,7 +831,7 @@ func (m Model) chatPreview(r rect, stops []colorT) string {
 	case !m.chat.loaded:
 		body = kit.Block("\n"+kit.Spinner(m.frame, stops), iw, rows)
 	default:
-		view, _, _, _ := m.chatWindow(iw, rows, 0)
+		view, _, _, _ := m.chatWindow(iw, rows, 0, "chatpv")
 		body = kit.Block(view, iw, rows)
 	}
 	body += "\n" + kit.FadeRule(iw, "─", kit.At(stops, 0.5), m.th.BgBottom) + "\n" +
@@ -784,9 +839,21 @@ func (m Model) chatPreview(r rect, stops []colorT) string {
 	return p.Render(body)
 }
 
+// chatStops is the board's own gradient, for chat accents.
+func (m Model) chatStops() []colorT { return kit.PaletteNamed(m.curBoard.Palette).Stops }
+
+// chatSectionKey is the board screen's chat section as a hot spot.
+const chatSectionKey = "chat-section"
+
 // chatHints are the footer hints on the chat screen.
 func (m Model) chatHints() []kit.Hint {
-	if m.chat.sel >= 0 {
+	if c := m.chat; c.sel >= 0 && c.sel < len(c.msgs) {
+		switch {
+		case c.link >= 0:
+			return []kit.Hint{{"⏎", "open link"}, {"tab", "next"}, {"esc", "done"}}
+		case len(m.lineLinks(c.msgs[c.sel].Body)) > 0:
+			return []kit.Hint{{"↑↓", "select"}, {"tab", "links"}, {"o", "options"}, {"v", "profile"}, {"esc", "done"}}
+		}
 		return []kit.Hint{{"↑↓", "select"}, {"o", "options"}, {"v", "profile"}, {"tab", "type"}, {"esc", "done"}}
 	}
 	hints := []kit.Hint{{"⏎", "send"}, {"↑↓", "scroll"}, {"tab", "select"}}

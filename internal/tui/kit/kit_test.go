@@ -115,3 +115,50 @@ func TestGlowRuleSettles(t *testing.T) {
 		t.Fatalf("width %d", w)
 	}
 }
+
+// Hot marks survive panels, fitting, truncation and the menu's glow, land in
+// the hit map where they were drawn, and never reach the terminal.
+func TestHotSpotsMapAndVanish(t *testing.T) {
+	th := Midnight
+	menu := NewMenu([]Item{{Title: "first"}, {Title: "second"}})
+	menu.HotKey = func(i int) string { return "row" + string(rune('0'+i)) }
+	body := Hot("link", "click me") + " plain " + Hot("cut", "this one is far too long to fit")
+	p := Panel{Width: 30, Height: 9, Theme: th}
+	sc := NewScene(40, 12, th)
+	var hm HotMap
+	sc.Hot = &hm
+	sc.Base = "\n" + Indent(p.Render(body+"\n"+menu.Render(26, 5, th, true)), 3)
+	out := sc.Render()
+	if strings.Contains(out, hotScheme) {
+		t.Fatal("a hot mark reached the output")
+	}
+	if x, y, ok := hm.Find("link"); !ok || x != 5 || y != 2 {
+		t.Fatalf("link at %d,%d %v", x, y, ok)
+	}
+	if hm.At(5+len("click me"), 2) != "" || hm.At(4, 2) != "" {
+		t.Fatal("link span spills past its text")
+	}
+	if _, y, ok := hm.Find("cut"); !ok || y != 2 {
+		t.Fatal("truncated link lost")
+	}
+	if hm.At(3+29, 2) != "" {
+		t.Fatal("a truncated link leaked into the border")
+	}
+	_, y0, ok0 := hm.Find("row0")
+	_, y1, ok1 := hm.Find("row1")
+	if !ok0 || !ok1 || y0 != 3 || y1 != 6 {
+		t.Fatalf("menu rows at %d %v, %d %v; keys %v", y0, ok0, y1, ok1, hm.Keys())
+	}
+	if hm.At(7, 4) != "row0" {
+		t.Fatal("the description row of an item is not part of it")
+	}
+}
+
+// A real link (the external-link modal's) passes through to the terminal.
+func TestRealLinksPassThrough(t *testing.T) {
+	sc := NewScene(20, 2, Midnight)
+	sc.Base = Link("https://example.com", "go")
+	if !strings.Contains(sc.Render(), "https://example.com") {
+		t.Fatal("real hyperlink was dropped")
+	}
+}

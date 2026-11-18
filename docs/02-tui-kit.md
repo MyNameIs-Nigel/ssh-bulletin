@@ -28,7 +28,10 @@ visual idea lives in the kit.
 | `Pixels` | half-block canvas (two pixels per cell) — `Sigil` and `Orb` draw on it |
 | `Wordmark` | the logo in a 5-row block font, every pixel a whole cell painted with a background color: no glyphs, so it is solid in any font (half-blocks are drawn by the font and often fall short of the cell) |
 | `Sigil` | deterministic identicon from a key fingerprint |
-| `Scene` | the compositor: base layer + overlays at (x,y), backdrop fill, dimming |
+| `Scene` | the compositor: base layer + overlays at (x,y), backdrop fill, dimming; collects hot spots into a `HotMap` |
+| `Hot`, `HotMap` | hot spots: text tagged with a zero-width private OSC 8 mark, read off the finished frame for clicks and hover, and erased before output (see [04](04-rich-text-and-hover.md)) |
+| `Flow`, `FlowPhase` | the one "lit" look shared by hover and keyboard focus: a running gradient over a tint, underlined |
+| `Link` | a real OSC 8 hyperlink, used only after the reader has been warned |
 | `Toasts` | slide-in notifications with easeOutBack, auto-expiring |
 
 ## Compositing — why `Scene` exists
@@ -50,7 +53,7 @@ Two traps found while building it, both covered by `kit_test.go`:
 One frame loop at 20 fps (`kit.Frame`), guarded by a generation counter so a
 stale tick can never start a second loop. It runs **only while something
 animates** (a menu glow in flight, a toast, a cross-fading accent, a focus
-flow, the splash until a key is pressed, and the onboarding shimmer for 8 s after the last keypress) and
+flow, the splash until a key is pressed, the onboarding shimmer for 8 s after the last keypress, and a lit hot spot for 6 s after the last input) and
 stops otherwise; a 15 s clock tick handles the idle timeout.
 `TestAnimationLoopStops` and `TestAmbientScreensSettle` hold that line — an always-on loop at 20 fps across
 every connected session is the main bandwidth and CPU cost this design has.

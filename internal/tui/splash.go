@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/mynameis-nigel/ssh-bulletin/internal/tui/kit"
@@ -63,6 +64,10 @@ func (m Model) viewSplash() string {
 	}
 	content = append(content, prompt...)
 
+	m.ui.targets[creditKey] = func(m *Model) tea.Cmd {
+		m.openLink(bridgeSource)
+		return nil
+	}
 	body := strings.Join(content, "\n")
 	top := max(0, (m.h-lipgloss.Height(body))/2-1)
 	return strings.Repeat("\n", top) + body

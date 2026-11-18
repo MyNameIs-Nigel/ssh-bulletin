@@ -59,6 +59,7 @@ const (
 	ovHelp
 	ovModeration
 	ovOptions
+	ovLink
 )
 
 // Model is the root Bubble Tea model.
@@ -134,6 +135,17 @@ type Model struct {
 	toasts  kit.Toasts
 	flash   string // one-line status message in the footer
 	flashAt time.Time
+
+	// Hover and links (hover.go, rich.go).
+	ui      *frameState // what the last frame drew, shared by every copy
+	stamp   int         // bumped by every update that may change the frame
+	reuse   bool        // this update changed nothing visible
+	hover   string      // hot spot under the pointer
+	litWas  string      // what was lit, to restart the flow when it changes
+	litAt   time.Time   // when it lit up
+	refs    board.Refs
+	linkSel int // keyboard-focused link in the selected post, or -1
+	link    linkModalState
 }
 
 // New builds the model for one session.
@@ -164,7 +176,11 @@ func New(d Deps) Model {
 		peek:       map[int64][]board.Thread{},
 		boardMenu:  kit.NewMenu(nil),
 		threadMenu: kit.NewMenu(nil),
+		ui:         newFrameState(),
+		refs:       board.Refs{},
+		linkSel:    -1,
 	}
+	m.chat.link = -1
 	m.form = newIdentityForm(m.th, d.Suggested, m.acct)
 	m.compose = newCompose(m.th)
 	m.pal = newPalette(m.th)
@@ -234,6 +250,8 @@ func (m Model) animating() bool {
 		return true
 	case (m.screen == scrBoard || m.screen == scrChat) && (!m.chat.loaded || m.chat.sending || m.chat.loadingOlder):
 		return true
+	case m.flowing():
+		return true
 	}
 	return false
 }
@@ -277,6 +295,7 @@ type previewMsg struct {
 	version  int
 	threadID int64
 	posts    []board.Post
+	refs     board.Refs
 }
 type postsMsg struct {
 	version  int
@@ -285,6 +304,7 @@ type postsMsg struct {
 	posts    []board.Post
 	err      error
 	focus    int64 // post id to put the cursor on, if any
+	refs     board.Refs
 }
 type eventMsg board.Event
 type eventsClosedMsg struct{}
@@ -347,7 +367,11 @@ func (m Model) loadPreview(threadID int64) tea.Cmd {
 		if len(ps) > 1 {
 			ps = ps[:1]
 		}
-		return previewMsg{version: version, threadID: threadID, posts: ps}
+		var refs board.Refs
+		if len(ps) > 0 {
+			refs, _ = d.Service.ResolveText(d.Context, ps[0].Body)
+		}
+		return previewMsg{version: version, threadID: threadID, posts: ps, refs: refs}
 	}
 }
 
@@ -362,7 +386,25 @@ func (m Model) loadPosts(threadID, focus int64) tea.Cmd {
 		if err == nil && len(ps) == 0 {
 			err = board.ErrNotFound
 		}
-		return postsMsg{version: version, threadID: threadID, thread: t, posts: ps, err: err, focus: focus}
+		bodies := make([]string, len(ps))
+		for i, p := range ps {
+			bodies[i] = p.Body
+		}
+		refs, _ := d.Service.ResolveText(d.Context, bodies...)
+		return postsMsg{version: version, threadID: threadID, thread: t, posts: ps, err: err, focus: focus, refs: refs}
+	}
+}
+
+// mergeRefs keeps the latest resolution of every reference seen.
+func (m *Model) mergeRefs(refs board.Refs) {
+	if len(refs) == 0 {
+		return
+	}
+	if len(m.refs)+len(refs) > 4096 {
+		m.refs = board.Refs{}
+	}
+	for k, v := range refs {
+		m.refs[k] = v
 	}
 }
 

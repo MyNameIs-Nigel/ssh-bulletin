@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -45,6 +46,7 @@ type directoryMsg struct {
 type userProfileMsg struct {
 	request int
 	profile board.Profile
+	refs    board.Refs
 	err     error
 }
 
@@ -199,7 +201,12 @@ func (m Model) viewDirectory() string {
 	case dir.err != "":
 		body = kit.S(m.th.Bad).Render(dir.err)
 	case len(dir.entries) > 0:
-		body = dir.menu.Render(iw, ih-directoryHeaderRows, m.th, true)
+		menu := dir.menu
+		m.menuHot(&menu, "dir", func(m *Model, i int) tea.Cmd {
+			m.directory.menu.Select(i)
+			return m.openUserProfile(m.directory.entries[i].ID)
+		})
+		body = menu.Render(iw, ih-directoryHeaderRows, m.th, true)
 	case dir.loading:
 		body = kit.S(m.th.Muted).Render("Searching…")
 	case dir.friendsOnly && dir.input.Value() == "":
@@ -225,7 +232,8 @@ func (m *Model) loadUserProfile() tea.Cmd {
 	d, request, id := m.d, m.socialRequest, m.userProfile.id
 	return func() tea.Msg {
 		profile, err := d.Service.Profile(d.Context, id)
-		return userProfileMsg{request: request, profile: profile, err: err}
+		refs, _ := d.Service.ResolveLines(d.Context, profile.Bio)
+		return userProfileMsg{request: request, profile: profile, refs: refs, err: err}
 	}
 }
 
@@ -241,17 +249,7 @@ func (m *Model) updateUserProfile(k tea.KeyPressMsg) tea.Cmd {
 	case "down", "j":
 		u.recent = max(0, min(len(u.data.Recent)-1, u.recent+1))
 	case "enter":
-		if !u.saving && u.recent < len(u.data.Recent) {
-			p := u.data.Recent[u.recent]
-			for _, b := range m.boards {
-				if b.ID == p.BoardID {
-					m.curBoard = b
-					m.setAccent(kit.PaletteNamed(b.Palette).Stops)
-					break
-				}
-			}
-			return m.enterThread(board.Thread{ID: p.ThreadID, BoardID: p.BoardID}, p.PostID)
-		}
+		return m.openRecent()
 	case "e":
 		if u.data.ID == m.viewerID() {
 			m.openProfile()
@@ -269,6 +267,23 @@ func (m *Model) updateUserProfile(k tea.KeyPressMsg) tea.Cmd {
 		}
 	}
 	return nil
+}
+
+// openRecent jumps to the selected recent post on a profile.
+func (m *Model) openRecent() tea.Cmd {
+	u := &m.userProfile
+	if u.saving || u.recent >= len(u.data.Recent) {
+		return nil
+	}
+	p := u.data.Recent[u.recent]
+	for _, b := range m.boards {
+		if b.ID == p.BoardID {
+			m.curBoard = b
+			m.setAccent(kit.PaletteNamed(b.Palette).Stops)
+			break
+		}
+	}
+	return m.enterThread(board.Thread{ID: p.ThreadID, BoardID: p.BoardID}, p.PostID)
 }
 
 func (m *Model) returnFromSocial(to screen) tea.Cmd {
@@ -337,7 +352,8 @@ func (m Model) viewUserProfile() string {
 		bio = "No bio yet."
 	}
 	var body strings.Builder
-	body.WriteString(top + "\n\n" + kit.S(m.th.Subtle).Render(kit.Wrap(bio, iw)) + "\n\n")
+	bioLines := m.richLine(bio, iw, richOpts{ink: kit.S(m.th.Subtle), accent: stops, scope: "bio"})
+	body.WriteString(top + "\n\n" + strings.Join(bioLines, "\n") + "\n\n")
 	body.WriteString(kit.GradientBold("Recent activity", stops) + "\n")
 	if len(a.Recent) == 0 {
 		body.WriteString(kit.S(m.th.Muted).Render("No public posts yet."))
@@ -352,7 +368,17 @@ func (m Model) viewUserProfile() string {
 			verb = "Replied"
 		}
 		detail := kit.S(m.th.Muted).Render(verb + " · " + activity.Board + " · " + kit.Ago(activity.CreatedAt, m.now()))
-		body.WriteString(kit.S(ink).Render(prefix+kit.Fit(activity.Title, iw-lipgloss.Width(detail)-4)) + "  " + detail + "\n")
+		key := "recent:" + strconv.Itoa(i)
+		title := kit.Fit(activity.Title, iw-lipgloss.Width(detail)-4)
+		row := kit.S(ink).Render(prefix + title)
+		if m.lit(key) {
+			row = kit.S(ink).Render(prefix) + kit.Flow(title, lipgloss.NewStyle(), stops, true, m.phase(), m.th)
+		}
+		i := i
+		body.WriteString(m.hot(key, func(m *Model) tea.Cmd {
+			m.userProfile.recent = i
+			return m.openRecent()
+		}, row+"  "+detail) + "\n")
 	}
 	return kit.Indent(p.Render(body.String()), r.x)
 }

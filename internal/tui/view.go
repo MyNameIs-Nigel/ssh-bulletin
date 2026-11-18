@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/mynameis-nigel/ssh-bulletin/internal/board"
+	"github.com/mynameis-nigel/ssh-bulletin/internal/markup"
 	"github.com/mynameis-nigel/ssh-bulletin/internal/tui/kit"
 )
 
@@ -30,6 +32,10 @@ func (m Model) body() rect { return rect{0, 2, m.w, max(0, m.h-3)} }
 
 // View renders the frame.
 func (m Model) View() tea.View {
+	if m.reuse && m.ui.valid && m.ui.stamp == m.stamp {
+		return m.ui.view
+	}
+	clear(m.ui.targets)
 	var content string
 	if m.w < minW || m.h < minH {
 		content = m.viewTooSmall()
@@ -38,9 +44,12 @@ func (m Model) View() tea.View {
 	}
 	v := tea.NewView(content)
 	v.AltScreen = true
-	v.MouseMode = tea.MouseModeCellMotion
+	// All motion, not just drags: hover needs to know where the pointer is.
+	// Motion that changes nothing reuses this frame (see Update).
+	v.MouseMode = tea.MouseModeAllMotion
 	v.BackgroundColor = m.th.BgTop
 	v.WindowTitle = "bulletin · ssharcade"
+	m.ui.view, m.ui.stamp, m.ui.valid = v, m.stamp, true
 	return v
 }
 
@@ -48,6 +57,8 @@ func (m Model) View() tea.View {
 // overlays and toasts over it.
 func (m Model) compose3() string {
 	sc := kit.NewScene(m.w, m.h, m.th)
+	sc.Hot = &m.ui.hot
+	sc.Modal = m.overlay != ovNone
 	switch m.screen {
 	case scrSplash:
 		sc.Base = m.viewSplash()
@@ -91,24 +102,8 @@ func (m Model) masthead() string {
 	brand := kit.Gradient("◆ BULLETIN", lipgloss.NewStyle().Bold(true), m.th.Brand.Stops, 0)
 	brand = " " + brand + kit.S(m.th.Faint).Render("  ssharcade")
 
-	crumbs := []string{"boards"}
-	switch m.screen {
-	case scrBoard:
-		crumbs = append(crumbs, m.curBoard.Title)
-	case scrThread:
-		crumbs = append(crumbs, m.curBoard.Title, clip(m.curThread.Title, 32))
-	case scrChat:
-		crumbs = append(crumbs, m.curBoard.Title, "live chat")
-	case scrModeration:
-		crumbs = []string{"moderation"}
-	case scrProfile:
-		crumbs = []string{"edit profile"}
-	case scrDirectory:
-		crumbs = []string{"directory"}
-	case scrUserProfile:
-		crumbs = []string{"profile"}
-	}
-	mid := kit.Crumbs(crumbs, m.th, acc)
+	crumbs, runs := m.crumbs()
+	mid := m.crumbTrail(crumbs, runs, acc)
 
 	online := m.d.Service.Broker().Subscribers()
 	dot := kit.S(kit.Lerp(m.th.Good, m.th.BgTop, 0.35*kit.Pulse(time.Duration(m.frame)*time.Second/kit.FrameRate, 2*time.Second))).Render("●")
@@ -116,12 +111,12 @@ func (m Model) masthead() string {
 	if m.acct != nil {
 		// The handle wears its palette as ink rather than as a filled tag: a
 		// filled cell can only have square corners in a terminal.
-		right += "  " + kit.GradientBold(m.acct.Handle, kit.PaletteNamed(m.acct.Palette).Stops) + staffFlair(m.acct.Role, m.th.Warn) + " "
+		right += "  " + m.authorName("me", m.acct.ID, m.acct.Handle, kit.PaletteNamed(m.acct.Palette).Stops) + staffFlair(m.acct.Role, m.th.Warn) + " "
 	}
 
 	lw, mw, rw := lipgloss.Width(brand), lipgloss.Width(mid), lipgloss.Width(right)
 	if m.w-lw-mw-rw < 4 && len(crumbs) > 1 {
-		mid = kit.Crumbs([]string{"…", crumbs[len(crumbs)-1]}, m.th, acc)
+		mid = m.crumbTrail([]string{"…", crumbs[len(crumbs)-1]}, []func(*Model) tea.Cmd{runs[len(runs)-2], nil}, acc)
 		mw = lipgloss.Width(mid)
 	}
 	gap := m.w - lw - mw - rw
@@ -133,6 +128,50 @@ func (m Model) masthead() string {
 		row = kit.Fit(brand+"   "+mid, m.w-rw-1) + " " + right
 	}
 	return kit.Fit(row, m.w) + "\n" + kit.GlowRule(m.w, "━", acc, m.th.Backdrop(1, m.h), m.sweep())
+}
+
+// crumbs is the breadcrumb trail and what clicking each crumb does; the last
+// crumb is where you are, so it does nothing.
+func (m Model) crumbs() ([]string, []func(*Model) tea.Cmd) {
+	home := func(m *Model) tea.Cmd { m.goHome(); return m.loadHome() }
+	toBoard := (*Model).back // from a thread or the chat, back is the board
+	switch m.screen {
+	case scrBoard:
+		return []string{"boards", m.curBoard.Title}, []func(*Model) tea.Cmd{home, nil}
+	case scrThread:
+		return []string{"boards", m.curBoard.Title, clip(m.curThread.Title, 32)}, []func(*Model) tea.Cmd{home, toBoard, nil}
+	case scrChat:
+		return []string{"boards", m.curBoard.Title, "live chat"}, []func(*Model) tea.Cmd{home, toBoard, nil}
+	case scrModeration:
+		return []string{"moderation"}, []func(*Model) tea.Cmd{nil}
+	case scrProfile:
+		return []string{"edit profile"}, []func(*Model) tea.Cmd{nil}
+	case scrDirectory:
+		return []string{"directory"}, []func(*Model) tea.Cmd{nil}
+	case scrUserProfile:
+		return []string{"profile"}, []func(*Model) tea.Cmd{nil}
+	}
+	return []string{"boards"}, []func(*Model) tea.Cmd{nil}
+}
+
+// crumbTrail draws the breadcrumbs; every crumb but the last is a hot spot.
+func (m Model) crumbTrail(crumbs []string, runs []func(*Model) tea.Cmd, acc []colorT) string {
+	var out []string
+	for i, c := range crumbs {
+		key := ""
+		if runs[i] != nil {
+			key = "crumb:" + strconv.Itoa(i) + ":" + c
+		}
+		switch {
+		case i == len(crumbs)-1:
+			out = append(out, kit.GradientBold(c, acc))
+		case m.lit(key):
+			out = append(out, m.hot(key, runs[i], kit.Flow(c, lipgloss.NewStyle(), acc, true, m.phase(), m.th)))
+		default:
+			out = append(out, m.hot(key, runs[i], kit.S(m.th.Muted).Render(c)))
+		}
+	}
+	return strings.Join(out, kit.S(m.th.Faint).Render("  ›  "))
 }
 
 // sweep is where the masthead rule's highlight is after a focus change: it
@@ -150,7 +189,7 @@ func (m Model) sweep() float64 {
 // footer shows the current screen's key hints and any flash message.
 func (m Model) footer() string {
 	hints := m.hints()
-	left := " " + kit.Hints(hints, m.th, m.accent(), m.w-24)
+	left := " " + m.hintBar(hints, m.accent(), m.w-24, "foot")
 	right := kit.S(m.th.Faint).Render(versionLabel(m.d.Version) + " ")
 	if m.flash != "" && m.now().Sub(m.flashAt) < 6*time.Second {
 		right = kit.S(m.th.Warn).Render(m.flash+" ") + right
@@ -194,7 +233,18 @@ func (m Model) hints() []kit.Hint {
 	case scrChat:
 		return m.chatHints()
 	case scrThread:
+		links := m.selectedLinks()
+		if m.linkSel >= 0 && m.linkSel < len(links) {
+			verb := "open link"
+			if links[m.linkSel].Ref.Kind == markup.URL {
+				verb = "check link"
+			}
+			return []kit.Hint{{"⏎", verb}, {"tab", "next link"}, {"esc", "done"}, {"↑↓", "posts"}}
+		}
 		hints := []kit.Hint{{"↑↓", "posts"}, {"o", "options"}}
+		if len(links) > 0 {
+			hints = append(hints, kit.Hint{"tab", "links"})
+		}
 		if !m.curThread.Removed {
 			hints = append(hints, kit.Hint{"r", "reply"})
 		}
@@ -237,6 +287,7 @@ func (m Model) viewTooSmall() string {
 		kit.S(m.th.Muted).Render(fmt.Sprintf("you have %d×%d", m.w, m.h))
 	block := lipgloss.Place(m.w, m.h, lipgloss.Center, lipgloss.Center, lipgloss.NewStyle().Align(lipgloss.Center).Render(msg))
 	sc := kit.NewScene(m.w, m.h, m.th)
+	sc.Hot = &m.ui.hot // nothing is clickable here
 	sc.Base = block
 	return sc.Render()
 }

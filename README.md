@@ -18,6 +18,19 @@ handle the first time you connect.
 - Press `f` on another player's profile to add or remove them as a friend. A blue `F` appears by their name for you.
 - Press `p` to edit your profile and choose a flair. New threads and replies use the flair you saved when you post them.
 
+## Formatting and links
+
+Posts and chat take light Markdown: `**bold**`, `*italic*`, `` `code` ``,
+`~~strike~~`, `- lists`, `1. lists`, `> quotes`, headings and fenced code.
+They also take links:
+
+- `@handle` links a user, `#lobby` a board, `#12` a thread and `#12/3` the third post in it. A link only appears when its target exists. Internal links are bold and wear the colours of the user or board they point to.
+- `https://…` links leave the bulletin. They are underlined, end in `↗`, and always open a warning first that shows where they really go. From the warning you can copy the address, or ctrl/cmd-click it if your terminal opens links.
+- In a thread, `tab` walks the links in the selected post and `⏎` follows one. In chat, `tab` moves from the input to the selected message's links.
+- With a mouse, links, names, list rows, breadcrumbs and the key hints in the footer all light up under the pointer, and a click does what the key would.
+
+See [docs/04-rich-text-and-hover.md](docs/04-rich-text-and-hover.md) for the full syntax and how hover works.
+
 ## Live chat
 
 Every board has a live chat under its thread list.
@@ -33,7 +46,8 @@ Every board has a live chat under its thread list.
 | --- | --- |
 | `internal/identity` | Router protocol v2: proxy-key trust, strict `<fp-hex64>.<slot>` parsing, guests refused fail-closed |
 | `internal/store` | SQLite (modernc, WAL): accounts, boards, posts, roles, moderation history |
-| `internal/board` | Service layer, input cleaning/limits, live-event broker |
+| `internal/board` | Service layer, input cleaning/limits, live-event broker, link resolution |
+| `internal/markup` | The post and chat Markdown dialect and its `@user` / `#board` / `#12` references |
 | `internal/server` | wish v2 server: middleware stack, session caps by key and direct network, connection rate limit |
 | `internal/tui/kit` | **The TUI framework** — truecolor gradients, animated panels, spring menus, a layer compositor, toasts, pixel art |
 | `internal/tui` | The screens built on it: splash, onboarding, boards, threads, profile, compose, command palette, moderation |

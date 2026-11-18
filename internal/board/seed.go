@@ -39,11 +39,11 @@ func SeedDemo(ctx context.Context, svc *Service, st *store.Store) error {
 		replies     []string
 	}{
 		{0, 0, "hello from a 24-bit terminal",
-			"First post on the new board. Every color you see here is your own palette —\nhit P from anywhere to pick yours.",
-			[]string{"Gradient borders over SSH. What a time.", "The handle shimmer is a nice touch."}},
+			"First post on the new board. Every color you see here is **your own palette** —\nhit P from anywhere to pick yours.\n\nA few things to try:\n- say hi to @ferrofluid and @oldmoon\n- strategy talk lives in #arcade, setups in #workshop\n- posts take *light* markdown: `code`, > quotes, lists\n\nBuilt on https://charm.land if you want to make one too.",
+			[]string{"Gradient borders over SSH. What a time.", "The handle shimmer is a nice touch. Agree with #1/2 completely."}},
 		{1, 2, "Moon Miner: is the pirate belt worth it?",
 			"Tried a run through the belt with a half-full hold. Lost everything twice.\nIs there a trick or is it pure push-your-luck?",
-			[]string{"Pure push-your-luck. Bank early, bank often.", "Pirates spawn less if you drill the edges first."}},
+			[]string{"Pure push-your-luck. **Bank early, bank often.**", "Pirates spawn less if you drill the edges first.\n1. clear the rim\n2. dock at half hold\n3. only then go deep"}},
 		{2, 3, "Show your terminal setup",
 			"Font, colors, multiplexer. Mine: Iosevka, a dark ink-blue scheme, tmux with zero chrome.",
 			[]string{"WezTerm + JetBrains Mono. Ligatures off, forever."}},
@@ -73,7 +73,7 @@ func SeedDemo(ctx context.Context, svc *Service, st *store.Store) error {
 		{1, "always. the terminal glows brighter after midnight"},
 		{1, "also: just hit 40 asteroids in one moonminer run"},
 		{4, "40?! I can't get past the pirate belt"},
-		{2, "bank early, bank often. that's the whole secret"},
+		{2, "@quietfox bank early, bank often. that's the *whole* secret — see #2"},
 		{0, "this chat is so much faster than threads, love it"},
 	}
 	for _, c := range chat {

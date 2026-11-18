@@ -2,6 +2,8 @@ package tui
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -84,6 +86,17 @@ func (m *Model) openOptions() {
 		m.closeOverlay()
 		return m.openUserProfile(authorID)
 	})
+	if p.ID != 0 && p.Placeholder() == "" && !t.Removed && m.acct != nil {
+		ref := fmt.Sprintf("#%d/%d ", t.ID, m.postCursor+1)
+		add("Reply linking this post", strings.TrimSpace(ref), func(m *Model) tea.Cmd {
+			m.closeOverlay()
+			m.openCompose(composeReply)
+			if m.overlay == ovCompose && !strings.Contains(m.compose.body.Value(), strings.TrimSpace(ref)) {
+				m.compose.body.InsertString(ref)
+			}
+			return nil
+		})
+	}
 	if p.ID != 0 && p.Placeholder() == "" {
 		kind := postKind(m.opts.opening)
 		if m.viewerID() == p.AuthorID {
@@ -136,6 +149,19 @@ func (m *Model) updateOptions(msg tea.Msg) tea.Cmd {
 		}
 	}
 	return nil
+}
+
+// optionsMenu is the options list with each row a hot spot that runs it.
+func (m Model) optionsMenu() kit.Menu {
+	menu := m.opts.menu
+	m.menuHot(&menu, "option", func(m *Model, i int) tea.Cmd {
+		if m.opts.busy || m.opts.confirming || i >= len(m.opts.actions) {
+			return nil
+		}
+		m.opts.menu.Select(i)
+		return m.opts.actions[i](m)
+	})
+	return menu
 }
 
 func (m *Model) deletePost() tea.Cmd {
@@ -196,7 +222,7 @@ func (m *Model) receivePin(msg pinResultMsg) tea.Cmd {
 func (m Model) viewOptions() string {
 	acc := m.accent()
 	w := min(m.w-10, 56)
-	menu := m.opts.menu
+	menu := m.optionsMenu()
 	title := "thread options"
 	label, subject := "thread  ", m.opts.thread.Title
 	question, verb := "Permanently delete this "+postKind(m.opts.opening)+"?", "delete"
@@ -215,10 +241,10 @@ func (m Model) viewOptions() string {
 		kit.Rule(w-4, "─", acc, 0) + "\n"
 	if m.opts.confirming {
 		body += kit.S(m.th.Text).Render(question) + "\n" +
-			kit.Hints([]kit.Hint{{"y", verb}, {"esc", "cancel"}}, m.th, acc, w-4)
+			m.hintBar([]kit.Hint{{"y", verb}, {"esc", "cancel"}}, acc, w-4, "options")
 	} else {
 		body += menu.Render(w-4, 2*len(menu.Items)-1, m.th, true) + "\n" +
-			kit.Hints([]kit.Hint{{"↑↓", "move"}, {"⏎", "choose"}, {"esc", "close"}}, m.th, acc, w-4)
+			m.hintBar([]kit.Hint{{"↑↓", "move"}, {"⏎", "choose"}, {"esc", "close"}}, acc, w-4, "options")
 	}
 	p := kit.Panel{Title: "⚙ " + title, Width: w, Height: lipgloss.Height(body) + 2, Stops: acc, Focused: true,
 		Phase: m.panelPhase(), Fill: m.th.Overlay, Theme: m.th}

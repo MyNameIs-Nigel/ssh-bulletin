@@ -206,7 +206,7 @@ func (m Model) viewIdentity(edit bool) string {
 		b.WriteString(kit.Center(kit.S(m.th.Bad).Render("✗ "+f.err), m.w) + "\n")
 	}
 	if !edit {
-		b.WriteString("\n" + kit.Center(kit.Hints([]kit.Hint{{"tab", "next field"}, {"←→", "palette"}, {"⏎", "create account"}, {"esc", "leave"}}, m.th, stops, m.w), m.w))
+		b.WriteString("\n" + kit.Center(m.hintBar([]kit.Hint{{"tab", "next field"}, {"←→", "palette"}, {"⏎", "create account"}, {"esc", "leave"}}, stops, m.w, "onboard"), m.w))
 		out := b.String()
 		top := max(0, (m.h-lipgloss.Height(out))/2)
 		return strings.Repeat("\n", top) + out
