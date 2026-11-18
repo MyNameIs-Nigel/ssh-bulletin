@@ -124,6 +124,10 @@ func (c *composeState) reset() {
 }
 
 func (m *Model) openCompose(mode composeMode) {
+	if mode == composeReply && m.curThread.Removed {
+		m.setFlash("This thread is closed to new replies")
+		return
+	}
 	if m.acct == nil {
 		m.setFlash("create an account first")
 		return
@@ -307,9 +311,13 @@ func (m *Model) openPalette() {
 	)
 	if m.canModerate() {
 		acts = append(acts, action{"Moderation", "staff", brand, (*Model).openModeration})
-		if _, ok := m.optionsTarget(); ok {
-			acts = append(acts, action{"Thread options", "staff", brand, func(m *Model) tea.Cmd { m.openOptions(); return nil }})
+	}
+	if _, ok := m.optionsTarget(); ok {
+		label := "Thread options"
+		if m.screen == scrThread {
+			label = "Post options"
 		}
+		acts = append(acts, action{label, "", brand, func(m *Model) tea.Cmd { m.openOptions(); return nil }})
 	}
 	m.pal.actions = acts
 	m.pal.input.Reset()
@@ -400,14 +408,12 @@ func (m Model) viewHelp() string {
 		keys  []kit.Hint
 	}{
 		{"anywhere", []kit.Hint{{"/ ctrl+k", "jump palette"}, {"u", "user directory"}, {"p", "edit your profile"}, {"esc", "back"}, {"ctrl+c", "leave"}}},
-		{"lists", []kit.Hint{{"↑↓ j k", "move"}, {"⏎ → l", "open"}, {"g G", "top / bottom"}, {"n", "new thread"}}},
-		{"threads", []kit.Hint{{"↑↓", "post by post"}, {"v / click", "author profile"}, {"r ⏎", "reply"}, {"f +", "kudos"}, {"!", "report"}, {"pgup pgdn", "scroll"}}},
+		{"lists", []kit.Hint{{"↑↓ j k", "move"}, {"⏎ → l", "open"}, {"g G", "top / bottom"}, {"n", "new thread"}, {"o", "thread options"}}},
+		{"threads", []kit.Hint{{"↑↓", "post by post"}, {"o", "post options"}, {"r ⏎", "reply"}, {"f +", "kudos"}, {"!", "report"}, {"pgup pgdn", "scroll"}}},
 		{"writing", []kit.Hint{{"ctrl+s", "post"}, {"tab", "title ↔ body"}, {"esc", "cancel"}}},
 	}
 	if m.canModerate() {
 		groups[0].keys = append(groups[0].keys, kit.Hint{"m", "moderation"})
-		groups[1].keys = append(groups[1].keys, kit.Hint{"o", "thread options"})
-		groups[2].keys = append(groups[2].keys, kit.Hint{"x", "remove post"})
 	}
 	col := func(gi int) string {
 		g := groups[gi]

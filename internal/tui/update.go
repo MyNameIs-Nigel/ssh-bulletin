@@ -114,7 +114,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.posts = nil
 			m.closeOverlay()
 			m.compose.reset()
-			m.setFlash("This thread was removed")
+			m.setFlash("This thread is unavailable")
 			cmds = append(cmds, m.back())
 			break
 		}
@@ -227,6 +227,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setFlash(friendly(msg.err))
 		}
 
+	case deleteResultMsg:
+		cmds = append(cmds, m.receiveDelete(msg))
+
 	case pinResultMsg:
 		cmds = append(cmds, m.receivePin(msg))
 
@@ -248,7 +251,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.closeOverlay()
 			m.mod.detail = nil
 			m.toasts.Push(m.now(), msg.message, "", m.myStops())
-			cmds = append(cmds, m.loadModeration())
+			if m.screen == scrThread && m.modForm.action == board.Removed {
+				cmds = append(cmds, m.onEvent(board.Event{Kind: board.EventModeration, ThreadID: m.curThread.ID, PostID: m.modForm.postID}))
+			} else {
+				cmds = append(cmds, m.loadModeration())
+			}
 		}
 
 	case roleMsg:
@@ -257,6 +264,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			wasStaff := a.Role.CanModerate()
 			a.Role = msg.role
 			m.acct = &a
+			if wasStaff != m.canModerate() && m.overlay == ovOptions && !m.opts.busy {
+				m.closeOverlay()
+			}
 			if wasStaff && !m.canModerate() {
 				m.leaveModeration()
 			}
@@ -439,6 +449,9 @@ func (m *Model) onEvent(ev board.Event) tea.Cmd {
 	case board.EventReview:
 		cmds = append(cmds, m.loadModeration())
 	case board.EventModeration:
+		if m.overlay == ovOptions && m.opts.thread.ID == ev.ThreadID && !m.opts.busy {
+			m.closeOverlay()
+		}
 		m.contentVersion++
 		delete(m.previews, ev.ThreadID)
 		clear(m.peek)

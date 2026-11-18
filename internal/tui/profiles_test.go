@@ -64,7 +64,7 @@ func TestProfileNavigationAndPrivateFriendFlair(t *testing.T) {
 	other := drive(t, makeModel(friend), key("enter"), key("enter"), key("down"))
 	assertFriendBadge(other, false)
 
-	m = drive(t, m, key("v"), key("f"), key("esc"))
+	m = drive(t, m, key("o"), key("enter"), key("f"), key("esc"))
 	if m.screen != scrThread || m.curThread.ID != recent.ThreadID || m.posts[m.postCursor].ID != recent.PostID {
 		t.Fatal("profile exit did not restore the selected post")
 	}

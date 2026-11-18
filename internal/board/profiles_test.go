@@ -95,7 +95,7 @@ func TestPostFlairSnapshotsAndVisibleActivity(t *testing.T) {
 		t.Fatal(err)
 	}
 	profile, err = svc.Profile(ctx, alice.ID)
-	if err != nil || profile.PostCount != 0 || len(profile.Recent) != 0 {
+	if err != nil || profile.PostCount != 1 || len(profile.Recent) != 1 || profile.Recent[0].PostID != pid || profile.Recent[0].Title != "< removed >" {
 		t.Fatalf("profile includes removed content: %+v, %v", profile, err)
 	}
 }

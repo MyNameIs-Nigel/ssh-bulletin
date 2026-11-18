@@ -12,12 +12,13 @@ import (
 // Item is one menu entry. Each item may carry its own gradient, so a list of
 // boards reads as a list of distinct colored places.
 type Item struct {
-	Title    string
-	Desc     string
-	Meta     string      // right-aligned on the title row (counts, times)
-	Badge    string      // a small chip after the title ("NEW", "PINNED")
-	BadgeInk color.Color // optional chip color
-	Stops    []color.Color
+	Title      string
+	Desc       string
+	Meta       string      // right-aligned on the title row (counts, times)
+	Badge      string      // a small chip after the title ("NEW", "PINNED")
+	BadgeInk   color.Color // optional chip color
+	MutedTitle bool
+	Stops      []color.Color
 }
 
 // Menu is a vertically scrolling list with a spring-animated selection
@@ -175,6 +176,8 @@ func (m *Menu) Render(width, height int, th Theme, focused bool) string {
 		}
 		var title string
 		switch {
+		case it.MutedTitle:
+			title = S(th.Muted).Italic(true).Render(it.Title)
 		case selected && focused:
 			title = Gradient(it.Title, lipgloss.NewStyle().Bold(true), stops, 0)
 		case selected:
