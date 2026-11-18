@@ -174,7 +174,7 @@ func (m Model) viewIdentity(edit bool) string {
 		b.WriteString(kit.Center(kit.Gradient("make your mark", lipgloss.NewStyle().Bold(true), m.th.Brand.Stops, shimmer), m.w) + "\n")
 		b.WriteString(kit.Center(kit.S(m.th.Muted).Render("Your SSH key is your account — no password, no email, nothing to forget."), m.w) + "\n\n")
 	} else {
-		b.WriteString("\n")
+		b.WriteString(kit.Center(m.d.Fingerprint, m.w) + "\n")
 	}
 
 	// Left column: fields. Right column: live preview card.
@@ -186,9 +186,6 @@ func (m Model) viewIdentity(edit bool) string {
 
 	if f.err != "" {
 		b.WriteString("\n" + kit.Center(kit.S(m.th.Bad).Render("✗ "+f.err), m.w) + "\n")
-	}
-	if edit {
-		b.WriteString("\n" + kit.Center(m.d.Fingerprint, m.w) + "\n")
 	}
 	if !edit {
 		b.WriteString("\n" + kit.Center(kit.Hints([]kit.Hint{{"tab", "next field"}, {"←→", "palette"}, {"⏎", "create account"}, {"esc", "leave"}}, m.th, stops, m.w), m.w))

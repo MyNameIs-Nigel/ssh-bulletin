@@ -47,6 +47,10 @@ func TestModerationKeysAndFlairs(t *testing.T) {
 	}
 
 	member := makeModel(mod)
+	member.openProfile()
+	if view := ansi.Strip(member.View().Content); !strings.Contains(view, modKey) {
+		t.Fatalf("profile should show the full fingerprint at the minimum terminal size:\n%s", view)
+	}
 	member.curBoard, member.curThread, member.screen = boards[0], thread, scrThread
 	member.posts, err = svc.Posts(ctx, tid, mod.ID)
 	if err != nil || len(member.posts) != 1 {
