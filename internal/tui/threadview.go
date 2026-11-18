@@ -11,6 +11,11 @@ import (
 	"github.com/mynameis-nigel/ssh-bulletin/internal/tui/kit"
 )
 
+const (
+	threadPadX       = 2
+	postHeaderOffset = 9 // selection rail, sigil and gutters
+)
+
 // threadRect is the reading column: centered, capped for comfortable lines.
 func (m Model) threadRect() rect {
 	b := m.body()
@@ -39,6 +44,10 @@ func (m *Model) updateThread(k tea.KeyPressMsg) tea.Cmd {
 	case "r", "enter":
 		if len(m.posts) > 0 {
 			m.openCompose(composeReply)
+		}
+	case "v":
+		if m.postCursor < len(m.posts) {
+			return m.openUserProfile(m.posts[m.postCursor].AuthorID)
 		}
 	case "!", "shift+1", "x":
 		if m.postCursor < len(m.posts) && m.acct != nil {
@@ -109,10 +118,11 @@ func (m Model) postCard(p board.Post, idx, iw int, selected bool) []string {
 	astops := kit.PaletteNamed(p.AuthorPalette).Stops
 	sigil := strings.Split(kit.Sigil(p.AuthorKey, astops, 1), "\n")
 
-	name := kit.GradientBold(p.AuthorHandle, astops) + staffFlair(p.AuthorRole, kit.At(astops, 0.7))
+	name := kit.GradientBold(p.AuthorHandle, astops) + m.friendFlair(p.AuthorID) + staffFlair(p.AuthorRole, kit.At(astops, 0.7))
 	if idx == 0 {
 		name += " " + kit.Chip("OP", kit.At(astops, 0.7), true)
 	}
+	name += postFlair(p.Flair, astops)
 	when := kit.S(m.th.Muted).Render(" · " + kit.Ago(p.CreatedAt, m.now()))
 	heart := kit.S(m.th.Faint).Render("♡")
 	if p.KudosByViewer {
@@ -120,7 +130,7 @@ func (m Model) postCard(p board.Post, idx, iw int, selected bool) []string {
 	}
 	kudos := heart + kit.S(m.th.Muted).Render(fmt.Sprintf(" %d", p.Kudos))
 
-	bodyW := iw - 9
+	bodyW := iw - postHeaderOffset
 	head := name + when
 	head = kit.Fit(head, bodyW-lipgloss.Width(kudos)) + kudos
 	ink := m.th.Subtle
@@ -156,7 +166,7 @@ func (m Model) postCard(p board.Post, idx, iw int, selected bool) []string {
 // followCursor scrolls so the selected post's header is on screen.
 func (m *Model) followCursor() {
 	r := m.threadRect()
-	p := kit.Panel{Width: r.w, Height: r.h, Theme: m.th}
+	p := kit.Panel{Width: r.w, Height: r.h, PadX: threadPadX}
 	iw, ih := p.Inner()
 	lines, starts := m.threadLines(iw)
 	if m.postCursor >= len(starts) {
@@ -173,7 +183,11 @@ func (m *Model) followCursor() {
 	if end > m.postTop+ih {
 		m.postTop = min(start, end-ih)
 	}
-	m.postTop = max(0, min(m.postTop, max(0, len(lines)-ih)))
+	m.postTop = m.threadTop(len(lines), ih)
+}
+
+func (m Model) threadTop(lines, height int) int {
+	return max(0, min(m.postTop, max(0, lines-height)))
 }
 
 func (m Model) viewThread() string {
@@ -183,13 +197,13 @@ func (m Model) viewThread() string {
 	if len(m.posts) > 0 {
 		note = fmt.Sprintf("%d / %d", m.postCursor+1, len(m.posts))
 	}
-	p := kit.Panel{Title: "◆ thread", Note: note, Width: r.w, Height: r.h, Stops: acc, Focused: true, Phase: m.panelPhase(), Theme: m.th, PadX: 2}
+	p := kit.Panel{Title: "◆ thread", Note: note, Width: r.w, Height: r.h, Stops: acc, Focused: true, Phase: m.panelPhase(), Theme: m.th, PadX: threadPadX}
 	iw, ih := p.Inner()
 	if len(m.posts) == 0 {
 		return pad(r.x, p.Render("\n"+kit.Spinner(m.frame, acc)+kit.S(m.th.Muted).Render(" opening thread…")))
 	}
 	lines, _ := m.threadLines(iw)
-	top := max(0, min(m.postTop, max(0, len(lines)-ih)))
+	top := m.threadTop(len(lines), ih)
 	view := lines[top:min(len(lines), top+ih)]
 	// Scroll indicator on the right edge of the inner area.
 	out := kit.Block(strings.Join(view, "\n"), iw, ih)

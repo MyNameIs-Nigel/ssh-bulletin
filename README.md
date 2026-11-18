@@ -11,6 +11,13 @@ games in the arcade — not your username either: `ssh alice@…` and `ssh bob@�
 with the same key are the same poster. The username is only used to suggest a
 handle the first time you connect.
 
+## Profiles and friends
+
+- Press `u` from the boards to search usernames. `Tab` switches between the directory and your private friends list.
+- Press `v` on a selected post or reply, or click the author's name, to see their bio and recent activity. Open an activity entry to jump to that post.
+- Press `f` on another player's profile to add or remove them as a friend. A blue `F` appears by their name for you.
+- Press `p` to edit your profile and choose a flair. New threads and replies use the flair you saved when you post them.
+
 ## What's here
 
 | Path | What |

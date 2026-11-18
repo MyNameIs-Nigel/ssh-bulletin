@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -20,7 +21,8 @@ type identityForm struct {
 	handle textinput.Model
 	bio    textinput.Model
 	palIdx int
-	focus  int // 0 handle, 1 palette, 2 bio
+	flair  int
+	focus  int // 0 handle, 1 palette, 2 bio, 3 post flair
 	err    string
 	busy   bool
 }
@@ -37,6 +39,7 @@ func newIdentityForm(th kit.Theme, suggested string, acct *board.Account) identi
 		f.handle.SetValue(acct.Handle)
 		f.bio.SetValue(acct.Bio)
 		f.palIdx = kit.PaletteIndex(acct.Palette)
+		f.flair = max(0, slices.Index(board.PostFlairs(), acct.Flair))
 	} else if board.ValidHandle(suggested) && suggested != "default" {
 		f.handle.SetValue(suggested)
 	}
@@ -78,7 +81,7 @@ func (f *identityForm) update(msg tea.Msg, th kit.Theme, fields int) (cmd tea.Cm
 		case "ctrl+s":
 			return nil, true
 		case "enter":
-			if f.focus == fields-1 || fields == 2 && f.focus == 1 {
+			if f.focus == fields-1 {
 				return nil, true
 			}
 			f.setFocus(f.focus+1, fields)
@@ -92,6 +95,16 @@ func (f *identityForm) update(msg tea.Msg, th kit.Theme, fields int) (cmd tea.Cm
 				f.palIdx = (f.palIdx + 1) % len(kit.Palettes)
 			}
 			f.restyle(th)
+			return nil, false
+		}
+		if f.focus == 3 {
+			count := len(board.PostFlairs())
+			switch k.String() {
+			case "left", "h":
+				f.flair = (f.flair + count - 1) % count
+			case "right", "l", "space":
+				f.flair = (f.flair + 1) % count
+			}
 			return nil, false
 		}
 	}
@@ -127,6 +140,9 @@ func (m *Model) updateOnboard(msg tea.Msg) tea.Cmd {
 }
 
 func (m *Model) updateProfile(msg tea.Msg) tea.Cmd {
+	if m.form.busy {
+		return nil
+	}
 	if k, ok := msg.(tea.KeyPressMsg); ok {
 		switch k.String() {
 		case "esc":
@@ -137,7 +153,7 @@ func (m *Model) updateProfile(msg tea.Msg) tea.Cmd {
 		}
 	}
 	before := m.form.palIdx
-	cmd, submit := m.form.update(msg, m.th, 3)
+	cmd, submit := m.form.update(msg, m.th, 4)
 	if m.form.palIdx != before {
 		m.setAccent(m.form.palette().Stops)
 	}
@@ -146,8 +162,10 @@ func (m *Model) updateProfile(msg tea.Msg) tea.Cmd {
 	}
 	acct, d := *m.acct, m.d
 	handle, pal, bio := m.form.handle.Value(), m.form.palette().Name, m.form.bio.Value()
+	flair := board.PostFlairs()[m.form.flair]
+	m.form.busy = true
 	return func() tea.Msg {
-		a, err := d.Service.UpdateProfile(d.Context, acct, handle, pal, bio)
+		a, err := d.Service.UpdateProfile(d.Context, acct, handle, pal, bio, flair)
 		return registeredMsg{acct: a, err: err}
 	}
 }
@@ -185,7 +203,7 @@ func (m Model) viewIdentity(edit bool) string {
 	b.WriteString(kit.Center(row, m.w) + "\n")
 
 	if f.err != "" {
-		b.WriteString("\n" + kit.Center(kit.S(m.th.Bad).Render("✗ "+f.err), m.w) + "\n")
+		b.WriteString(kit.Center(kit.S(m.th.Bad).Render("✗ "+f.err), m.w) + "\n")
 	}
 	if !edit {
 		b.WriteString("\n" + kit.Center(kit.Hints([]kit.Hint{{"tab", "next field"}, {"←→", "palette"}, {"⏎", "create account"}, {"esc", "leave"}}, m.th, stops, m.w), m.w))
@@ -213,10 +231,23 @@ func (m Model) formFields(w int, edit bool) string {
 	}
 	var parts []string
 	parts = append(parts, label(0, "HANDLE"), field(0, f.handle.View()))
-	parts = append(parts, kit.S(m.th.Faint).Render(fmt.Sprintf("%d–%d letters, digits, _ or -", board.MinHandleLen, board.MaxHandleLen)), "")
+	parts = append(parts, kit.S(m.th.Faint).Render(fmt.Sprintf("%d–%d letters, digits, _ or -", board.MinHandleLen, board.MaxHandleLen)))
+	if !edit {
+		parts = append(parts, "")
+	}
 	parts = append(parts, label(1, "PALETTE  ")+kit.S(m.th.Subtle).Render(f.palette().Label), field(1, m.swatches(w-4)))
 	if edit {
-		parts = append(parts, "", label(2, "BIO"), field(2, f.bio.View()))
+		flair := board.PostFlairs()[f.flair]
+		choice := "None"
+		if flair != "" {
+			choice = kit.Chip(flair, kit.At(stops, 0.35), true)
+		}
+		direction := kit.S(m.th.Muted)
+		if f.focus == 3 {
+			direction = kit.S(kit.At(stops, 0.35)).Bold(true)
+		}
+		parts = append(parts, label(2, "BIO"), field(2, f.bio.View()),
+			label(3, "FLAIR ON NEW POSTS"), " "+direction.Render("‹")+" "+choice+" "+direction.Render("›"))
 	}
 	return strings.Join(parts, "\n")
 }
@@ -263,6 +294,9 @@ func (m Model) previewCard(w int, edit bool) string {
 	}
 	idW := max(8, w-4-lipgloss.Width(sigil)-2)
 	idBlock := kit.Fit(name, idW) + "\n" + kit.Fit(meta, idW)
+	if edit {
+		idBlock += "\n" + kit.Fit(postFlair(board.PostFlairs()[f.flair], stops), idW)
+	}
 	top := kit.SideBySide(2, sigil, idBlock)
 
 	sampleStyle, sample := kit.S(m.th.Subtle), "This is how your posts will look."

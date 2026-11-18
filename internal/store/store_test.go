@@ -77,14 +77,14 @@ func TestUpgradeChoosesEarliestExistingPlayer(t *testing.T) {
 	defer st.Close()
 
 	a, err := st.AccountByFingerprint(ctx, first)
-	if err != nil || a.Role != RoleOwner {
+	if err != nil || a.Role != RoleOwner || a.Flair != "" {
 		t.Fatalf("earliest registered real player: %+v %v", a, err)
 	}
 	if err := st.ConfigureOwner(ctx, later); !errors.Is(err, ErrOwnerMismatch) {
 		t.Fatalf("config replaced established owner: %v", err)
 	}
 	posts, err := st.Posts(ctx, 1, 0)
-	if err != nil || len(posts) != 1 || posts[0].Body != "Old post" || posts[0].AuthorRole != RoleOwner {
+	if err != nil || len(posts) != 1 || posts[0].Body != "Old post" || posts[0].AuthorRole != RoleOwner || posts[0].Flair != "" {
 		t.Fatalf("legacy content: %+v %v", posts, err)
 	}
 }

@@ -40,6 +40,7 @@ type Account struct {
 	Handle      string
 	Palette     string
 	Bio         string
+	Flair       string
 	CreatedAt   int64
 	LastSeen    int64
 	PostCount   int64
@@ -67,6 +68,7 @@ type Thread struct {
 	AuthorHandle  string
 	AuthorPalette string
 	AuthorRole    Role
+	Flair         string // flair on the opening post
 	CreatedAt     int64
 	LastPostAt    int64
 	ReplyCount    int64
@@ -82,6 +84,7 @@ type Post struct {
 	AuthorPalette string
 	AuthorRole    Role
 	AuthorKey     string // author's fingerprint; seeds their sigil, never displayed
+	Flair         string
 	Body          string
 	CreatedAt     int64
 	Kudos         int64
@@ -134,14 +137,14 @@ func (st *Store) AccountByID(ctx context.Context, id int64) (Account, error) {
 	return st.scanAccount(st.db.QueryRowContext(ctx, accountSelect+` WHERE a.id = ?`, id))
 }
 
-const accountSelect = `SELECT a.id, a.fingerprint, a.public_key, a.handle, a.palette, a.bio, a.created_at, a.last_seen,
+const accountSelect = `SELECT a.id, a.fingerprint, a.public_key, a.handle, a.palette, a.bio, a.flair, a.created_at, a.last_seen,
 	(SELECT COUNT(*) FROM posts p JOIN threads t ON t.id = p.thread_id
 		WHERE p.author_id = a.id AND p.removed = 0 AND t.removed = 0),
 	` + roleSQL + ` FROM accounts a`
 
 func (st *Store) scanAccount(row interface{ Scan(...any) error }) (Account, error) {
 	var a Account
-	err := row.Scan(&a.ID, &a.Fingerprint, &a.PublicKey, &a.Handle, &a.Palette, &a.Bio, &a.CreatedAt, &a.LastSeen, &a.PostCount, &a.Role)
+	err := row.Scan(&a.ID, &a.Fingerprint, &a.PublicKey, &a.Handle, &a.Palette, &a.Bio, &a.Flair, &a.CreatedAt, &a.LastSeen, &a.PostCount, &a.Role)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Account{}, ErrNotFound
 	}
@@ -161,11 +164,11 @@ func (st *Store) CreateAccount(ctx context.Context, fp, publicKey, handle, palet
 	return st.AccountByID(ctx, id)
 }
 
-// UpdateProfile changes an account's handle, palette and bio.
-func (st *Store) UpdateProfile(ctx context.Context, id int64, handle, palette, bio string) error {
+// UpdateProfile changes an account's handle, palette, bio and post flair.
+func (st *Store) UpdateProfile(ctx context.Context, id int64, handle, palette, bio, flair string) error {
 	_, err := st.db.ExecContext(ctx,
-		`UPDATE accounts SET handle = ?, handle_lower = ?, palette = ?, bio = ? WHERE id = ?`,
-		handle, strings.ToLower(handle), palette, bio, id)
+		`UPDATE accounts SET handle = ?, handle_lower = ?, palette = ?, bio = ?, flair = ? WHERE id = ?`,
+		handle, strings.ToLower(handle), palette, bio, flair, id)
 	return uniqueErr(err)
 }
 
@@ -215,13 +218,14 @@ func (st *Store) Boards(ctx context.Context) ([]Board, error) {
 }
 
 const threadSelect = `SELECT t.id, t.board_id, t.title, t.author_id, a.handle, a.palette, t.created_at, t.last_post_at,
-	(SELECT COUNT(*) - 1 FROM posts p WHERE p.thread_id = t.id AND p.removed = 0), t.pinned, ` + roleSQL + `
+	(SELECT COUNT(*) - 1 FROM posts p WHERE p.thread_id = t.id AND p.removed = 0), t.pinned,
+	COALESCE((SELECT p.flair FROM posts p WHERE p.thread_id = t.id ORDER BY p.id LIMIT 1), ''), ` + roleSQL + `
 	FROM threads t JOIN accounts a ON a.id = t.author_id`
 
 func scanThread(sc interface{ Scan(...any) error }) (Thread, error) {
 	var t Thread
 	err := sc.Scan(&t.ID, &t.BoardID, &t.Title, &t.AuthorID, &t.AuthorHandle, &t.AuthorPalette,
-		&t.CreatedAt, &t.LastPostAt, &t.ReplyCount, &t.Pinned, &t.AuthorRole)
+		&t.CreatedAt, &t.LastPostAt, &t.ReplyCount, &t.Pinned, &t.Flair, &t.AuthorRole)
 	return t, err
 }
 
@@ -255,7 +259,7 @@ func (st *Store) Thread(ctx context.Context, id int64) (Thread, error) {
 // Posts lists a thread's posts in order; viewer marks the viewer's kudos.
 func (st *Store) Posts(ctx context.Context, threadID, viewer int64) ([]Post, error) {
 	rows, err := st.db.QueryContext(ctx, `
-		SELECT p.id, p.thread_id, p.author_id, a.handle, a.palette, a.fingerprint, p.body, p.created_at,
+		SELECT p.id, p.thread_id, p.author_id, a.handle, a.palette, a.fingerprint, p.flair, p.body, p.created_at,
 		  (SELECT COUNT(*) FROM kudos k WHERE k.post_id = p.id),
 		  EXISTS(SELECT 1 FROM kudos k WHERE k.post_id = p.id AND k.account_id = ?), `+roleSQL+`
 		FROM posts p JOIN accounts a ON a.id = p.author_id JOIN threads t ON t.id = p.thread_id
@@ -267,7 +271,7 @@ func (st *Store) Posts(ctx context.Context, threadID, viewer int64) ([]Post, err
 	var out []Post
 	for rows.Next() {
 		var p Post
-		if err := rows.Scan(&p.ID, &p.ThreadID, &p.AuthorID, &p.AuthorHandle, &p.AuthorPalette, &p.AuthorKey, &p.Body,
+		if err := rows.Scan(&p.ID, &p.ThreadID, &p.AuthorID, &p.AuthorHandle, &p.AuthorPalette, &p.AuthorKey, &p.Flair, &p.Body,
 			&p.CreatedAt, &p.Kudos, &p.KudosByViewer, &p.AuthorRole); err != nil {
 			return nil, err
 		}
@@ -293,14 +297,18 @@ func (st *Store) CreateThread(ctx context.Context, boardID, authorID int64, titl
 		return 0, 0, err
 	}
 	tid, _ := res.LastInsertId()
-	res, err = tx.ExecContext(ctx,
-		`INSERT INTO posts (thread_id, author_id, body, created_at) VALUES (?, ?, ?, ?)`, tid, authorID, body, now)
+	res, err = tx.ExecContext(ctx, insertPost, tid, authorID, body, now, authorID)
 	if err != nil {
 		return 0, 0, err
 	}
 	pid, _ := res.LastInsertId()
 	return tid, pid, tx.Commit()
 }
+
+// Read the current flair in the posting transaction so concurrent sessions use
+// the saved preference even if their local account data is older.
+const insertPost = `INSERT INTO posts (thread_id, author_id, body, created_at, flair)
+	VALUES (?, ?, ?, ?, (SELECT flair FROM accounts WHERE id = ?))`
 
 // Reply appends a post to a thread and bumps its activity time.
 func (st *Store) Reply(ctx context.Context, threadID, authorID int64, body string, now int64) (int64, error) {
@@ -319,8 +327,7 @@ func (st *Store) Reply(ctx context.Context, threadID, authorID int64, body strin
 	if err := checkPostQuota(ctx, tx, authorID, now); err != nil {
 		return 0, err
 	}
-	res, err := tx.ExecContext(ctx,
-		`INSERT INTO posts (thread_id, author_id, body, created_at) VALUES (?, ?, ?, ?)`, threadID, authorID, body, now)
+	res, err := tx.ExecContext(ctx, insertPost, threadID, authorID, body, now, authorID)
 	if err != nil {
 		return 0, err
 	}

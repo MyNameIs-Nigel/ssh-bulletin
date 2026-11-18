@@ -131,7 +131,8 @@ func (m Model) boardDetail(r rect) string {
 			break
 		}
 		authorStops := kit.PaletteNamed(t.AuthorPalette).Stops
-		who := kit.GradientBold(t.AuthorHandle, authorStops) + staffFlair(t.AuthorRole, kit.At(authorStops, 0.7))
+		who := kit.GradientBold(t.AuthorHandle, authorStops) + m.friendFlair(t.AuthorID) +
+			staffFlair(t.AuthorRole, kit.At(authorStops, 0.7)) + postFlair(t.Flair, authorStops)
 		b.WriteString(kit.S(kit.At(stops, float64(j)/5)).Render("▍") + kit.S(m.th.Text).Render(clip(t.Title, iw-4)) + "\n")
 		line := kit.S(m.th.Faint).Render("▍") + who + kit.S(m.th.Muted).Render(fmt.Sprintf(" · %s · %s", kit.Plural(t.ReplyCount, "reply", "replies"), kit.Ago(t.LastPostAt, m.now())))
 		if t.Pinned {

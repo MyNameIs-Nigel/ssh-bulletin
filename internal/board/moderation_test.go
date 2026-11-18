@@ -34,7 +34,7 @@ func TestModerationRolesAndVisibility(t *testing.T) {
 	if owner.Role != RoleOwner || alice.Role != "" {
 		t.Fatalf("roles: owner=%q, first to register=%q", owner.Role, alice.Role)
 	}
-	if _, err := svc.UpdateProfile(ctx, mod, "ALICE", mod.Palette, ""); !errors.Is(err, ErrHandleTaken) {
+	if _, err := svc.UpdateProfile(ctx, mod, "ALICE", mod.Palette, "", mod.Flair); !errors.Is(err, ErrHandleTaken) {
 		t.Fatalf("rename collision: %v", err)
 	}
 	if _, err := svc.SetAdmin(ctx, alice.ID, mod.Handle, mod.Fingerprint, true); !errors.Is(err, ErrForbidden) {
@@ -50,7 +50,7 @@ func TestModerationRolesAndVisibility(t *testing.T) {
 	if err != nil || mod.Role != RoleAdmin {
 		t.Fatalf("admin grant: role=%q err=%v", mod.Role, err)
 	}
-	mod, err = svc.UpdateProfile(ctx, mod, "NewMod", mod.Palette, "")
+	mod, err = svc.UpdateProfile(ctx, mod, "NewMod", mod.Palette, "", mod.Flair)
 	if err != nil || mod.Role != RoleAdmin {
 		t.Fatalf("admin rename: role=%q err=%v", mod.Role, err)
 	}
