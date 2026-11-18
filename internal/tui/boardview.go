@@ -68,6 +68,8 @@ func (m *Model) updateBoard(k tea.KeyPressMsg) tea.Cmd {
 		}
 	case "n":
 		m.openCompose(composeThread)
+	case "o":
+		m.openOptions()
 	}
 	return nil
 }
@@ -150,7 +152,11 @@ func (m Model) threadPreview(r rect, stops []colorT) string {
 	var b strings.Builder
 	b.WriteString("\n" + kit.Wrap(kit.Gradient(t.Title, lipgloss.NewStyle().Bold(true), stops, 0), iw) + "\n")
 	b.WriteString(kit.S(m.th.Muted).Render("started by ") + kit.GradientBold(t.AuthorHandle, astops) + staffFlair(t.AuthorRole, kit.At(astops, 0.7)) +
-		kit.S(m.th.Muted).Render(" · "+kit.Ago(t.CreatedAt, m.now())) + "\n\n")
+		kit.S(m.th.Muted).Render(" · "+kit.Ago(t.CreatedAt, m.now())))
+	if t.Pinned {
+		b.WriteString("  " + pinnedChip(m.th))
+	}
+	b.WriteString("\n\n")
 	if posts, ok := m.previews[t.ID]; ok && len(posts) > 0 {
 		b.WriteString(kit.S(m.th.Subtle).Render(kit.Wrap(posts[0].Body, iw)))
 	} else {

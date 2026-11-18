@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Item is one menu entry. Each item may carry its own gradient, so a list of
@@ -177,7 +178,8 @@ func (m *Menu) Render(width, height int, th Theme, focused bool) string {
 			title = S(Lerp(th.Subtle, th.Text, lit)).Render(it.Title)
 		}
 		avail := titleW - lipgloss.Width(meta) - lipgloss.Width(badge) - 1
-		title = Fit(title+badge, max(1, avail+lipgloss.Width(badge)))
+		// Truncate the title alone: a long title must not cut the badge off.
+		title = Fit(ansi.Truncate(title, max(1, avail), "…")+badge, max(1, avail+lipgloss.Width(badge)))
 		row0 := rail(0) + " " + title + " " + meta
 		row0 = Fit(row0, width)
 		if selected {

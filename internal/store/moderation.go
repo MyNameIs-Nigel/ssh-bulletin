@@ -35,7 +35,11 @@ type ModerationEntry struct {
 	CreatedAt int64
 }
 
+// MaxPinned is how many threads one board can keep pinned at a time.
+const MaxPinned = 2
+
 var (
+	ErrPinLimit        = errors.New("that board already has 2 pinned threads. Unpin one first")
 	ErrAlreadyReported = errors.New("you already reported this post")
 	ErrReviewChanged   = errors.New("this post's moderation status changed. Refresh and try again")
 )
@@ -130,7 +134,8 @@ func (st *Store) Moderate(ctx context.Context, actorID, postID int64, action Mod
 			return 0, err
 		}
 		if p.opening {
-			if _, err := tx.ExecContext(ctx, `UPDATE threads SET removed = ? WHERE id = ?`, remove, p.threadID); err != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE threads SET removed = ?, pinned = CASE WHEN ? THEN 0 ELSE pinned END
+				WHERE id = ?`, remove, remove, p.threadID); err != nil {
 				return 0, err
 			}
 		}
@@ -203,4 +208,46 @@ func (st *Store) ModerationPage(ctx context.Context, actorID int64, view Moderat
 		entries = append(entries, entry)
 	}
 	return entries, rows.Err()
+}
+
+// SetPinned sets a thread's sticky state. The actor's role is checked in the
+// same transaction as the update, and the target state is explicit rather
+// than a toggle, so a double press or two admins racing cannot undo each
+// other. It returns the thread's board for event routing.
+func (st *Store) SetPinned(ctx context.Context, actorID, threadID int64, pinned bool) (int64, error) {
+	tx, err := st.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	role, err := accountRole(ctx, tx, actorID)
+	if err != nil {
+		return 0, err
+	}
+	if !role.CanModerate() {
+		return 0, ErrForbidden
+	}
+	var boardID int64
+	err = tx.QueryRowContext(ctx, `SELECT board_id FROM threads WHERE id = ? AND removed = 0`, threadID).Scan(&boardID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, err
+	}
+	if pinned {
+		// Other threads only: pinning an already pinned thread stays harmless.
+		var others int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM threads
+			WHERE board_id = ? AND pinned = 1 AND removed = 0 AND id != ?`, boardID, threadID).Scan(&others); err != nil {
+			return 0, err
+		}
+		if others >= MaxPinned {
+			return 0, ErrPinLimit
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE threads SET pinned = ? WHERE id = ?`, pinned, threadID); err != nil {
+		return 0, err
+	}
+	return boardID, tx.Commit()
 }

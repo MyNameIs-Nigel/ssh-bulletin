@@ -59,7 +59,8 @@ BULLETIN_RENDER_DIR=/tmp/renders go test ./internal/tui -run TestRenderGoldens
 ## Moderation
 
 Select a post and press `!` to report it. Staff can open Moderation with `m`
-to review reports, see decisions, and restore removed posts. The super admin
+to review reports, see decisions, and restore removed posts, and `o` on a board
+or thread for thread options such as pinning it to the top of its board. The super admin
 can grant and revoke `A` by matching the player's handle and full SSH
 fingerprint. See the [moderation proposal and rollout notes](docs/03-moderation.md)
 for first-run and upgrade behavior.
