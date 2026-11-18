@@ -27,6 +27,8 @@ func (m *Model) onWheel(msg tea.MouseWheelMsg) tea.Cmd {
 		}
 	case scrThread:
 		m.postTop = max(0, m.postTop+3*d)
+	case scrChat:
+		return m.scrollChat(-3 * d)
 	case scrDirectory:
 		m.directory.menu.Move(d)
 		m.directory.menu.Snap()
@@ -52,7 +54,17 @@ func (m *Model) onClick(msg tea.MouseClickMsg) tea.Cmd {
 			return m.peekSelected()
 		}
 	case scrBoard:
+		if m.chatSectionRect().contains(msg.X, msg.Y) {
+			if m.chatFocus {
+				return m.openChat()
+			}
+			m.focusChatSection(true)
+			return nil
+		}
 		list, _ := m.boardLayout()
+		if list.contains(msg.X, msg.Y) {
+			m.focusChatSection(false)
+		}
 		if i, ok := m.rowHit(list, msg.X, msg.Y, m.threadMenu.ItemAtRow); ok {
 			if i == m.threadMenu.Cursor {
 				return m.enterThread(m.threads[i], 0)

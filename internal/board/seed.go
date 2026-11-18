@@ -65,5 +65,23 @@ func SeedDemo(ctx context.Context, svc *Service, st *store.Store) error {
 			}
 		}
 	}
+	chat := []struct {
+		author int
+		body   string
+	}{
+		{3, "anyone else up this late?"},
+		{1, "always. the terminal glows brighter after midnight"},
+		{1, "also: just hit 40 asteroids in one moonminer run"},
+		{4, "40?! I can't get past the pirate belt"},
+		{2, "bank early, bank often. that's the whole secret"},
+		{0, "this chat is so much faster than threads, love it"},
+	}
+	for _, c := range chat {
+		for _, b := range boards[:2] {
+			if _, err := svc.SendChat(ctx, accts[c.author], b.ID, c.body); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }

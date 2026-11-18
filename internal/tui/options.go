@@ -10,10 +10,13 @@ import (
 	"github.com/mynameis-nigel/ssh-bulletin/internal/tui/kit"
 )
 
-// optionsState keeps actions attached to the thread or post selected at open.
+// optionsState keeps actions attached to the thread, post, or chat message
+// selected at open.
 type optionsState struct {
 	thread     board.Thread
 	post       board.Post
+	chat       board.ChatMessage
+	removing   bool // confirming a staff removal of chat rather than a deletion
 	opening    bool
 	menu       kit.Menu
 	actions    []func(*Model) tea.Cmd
@@ -111,6 +114,9 @@ func (m *Model) updateOptions(msg tea.Msg) tea.Cmd {
 		case "esc", "q", "o", "n":
 			m.opts.confirming = false
 		case "y":
+			if m.opts.chat.ID != 0 {
+				return m.withdrawChat()
+			}
 			return m.deletePost()
 		}
 		return nil
@@ -192,14 +198,24 @@ func (m Model) viewOptions() string {
 	w := min(m.w-10, 56)
 	menu := m.opts.menu
 	title := "thread options"
-	if m.opts.post.ID != 0 {
+	label, subject := "thread  ", m.opts.thread.Title
+	question, verb := "Permanently delete this "+postKind(m.opts.opening)+"?", "delete"
+	switch {
+	case m.opts.chat.ID != 0:
+		title = "message options"
+		label, subject = m.opts.chat.AuthorHandle+"  ", m.opts.chat.Body
+		question = "Permanently delete this message?"
+		if m.opts.removing {
+			question, verb = "Remove this message from the chat?", "remove"
+		}
+	case m.opts.post.ID != 0:
 		title = postKind(m.opts.opening) + " options"
 	}
-	body := "\n" + kit.S(m.th.Muted).Render("thread  ") + kit.S(m.th.Text).Bold(true).Render(clip(m.opts.thread.Title, w-16)) + "\n" +
+	body := "\n" + kit.S(m.th.Muted).Render(label) + kit.S(m.th.Text).Bold(true).Render(clip(subject, max(1, w-6-len([]rune(label))))) + "\n" +
 		kit.Rule(w-4, "─", acc, 0) + "\n"
 	if m.opts.confirming {
-		body += kit.S(m.th.Text).Render("Permanently delete this "+postKind(m.opts.opening)+"?") + "\n" +
-			kit.Hints([]kit.Hint{{"y", "delete"}, {"esc", "cancel"}}, m.th, acc, w-4)
+		body += kit.S(m.th.Text).Render(question) + "\n" +
+			kit.Hints([]kit.Hint{{"y", verb}, {"esc", "cancel"}}, m.th, acc, w-4)
 	} else {
 		body += menu.Render(w-4, 2*len(menu.Items)-1, m.th, true) + "\n" +
 			kit.Hints([]kit.Hint{{"↑↓", "move"}, {"⏎", "choose"}, {"esc", "close"}}, m.th, acc, w-4)

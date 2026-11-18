@@ -38,16 +38,44 @@ func (m Model) threadItems() []kit.Item {
 	return items
 }
 
+// boardLayout is the thread list (above the chat section, which takes the
+// bottom of the same column) and the preview pane, if the terminal is wide
+// enough for one.
 func (m Model) boardLayout() (list, preview rect) {
 	b := m.body()
+	lh := max(2, b.h-chatSectionHeight(b.h))
 	if m.w < 100 {
-		return rect{1, b.y, m.w - 2, b.h}, rect{}
+		return rect{1, b.y, m.w - 2, lh}, rect{}
 	}
 	lw := m.w * 52 / 100
-	return rect{1, b.y, lw, b.h}, rect{lw + 2, b.y, m.w - lw - 3, b.h}
+	return rect{1, b.y, lw, lh}, rect{lw + 2, b.y, m.w - lw - 3, b.h}
+}
+
+func (m *Model) focusChatSection(on bool) {
+	if m.chatFocus != on {
+		m.chatFocus = on
+		m.touchFocus()
+	}
 }
 
 func (m *Model) updateBoard(k tea.KeyPressMsg) tea.Cmd {
+	switch k.String() {
+	case "tab", "shift+tab":
+		m.focusChatSection(!m.chatFocus)
+		return nil
+	case "n":
+		m.openCompose(composeThread)
+		return nil
+	}
+	if m.chatFocus {
+		switch k.String() {
+		case "up", "k":
+			m.focusChatSection(false)
+		case "enter", "right", "l":
+			return m.openChat()
+		}
+		return nil
+	}
 	switch k.String() {
 	case "up", "k":
 		if m.threadMenu.Move(-1) {
@@ -57,6 +85,8 @@ func (m *Model) updateBoard(k tea.KeyPressMsg) tea.Cmd {
 		if m.threadMenu.Move(1) {
 			return m.wantPreview()
 		}
+		// Past the last thread is the chat section.
+		m.focusChatSection(true)
 	case "home", "g":
 		m.threadMenu.Select(0)
 		return m.wantPreview()
@@ -67,8 +97,6 @@ func (m *Model) updateBoard(k tea.KeyPressMsg) tea.Cmd {
 		if i := m.threadMenu.Selected(); i >= 0 {
 			return m.enterThread(m.threads[i], 0)
 		}
-	case "n":
-		m.openCompose(composeThread)
 	case "o":
 		m.openOptions()
 	}
@@ -98,7 +126,7 @@ func (m Model) viewBoard() string {
 	stops := kit.PaletteNamed(m.curBoard.Palette).Stops
 
 	lp := kit.Panel{Title: "◆ " + m.curBoard.Title, Note: kit.Plural(int64(len(m.threads)), "thread", "threads"),
-		Width: list.w, Height: list.h, Stops: acc, Focused: true, Phase: m.panelPhase(), Theme: m.th}
+		Width: list.w, Height: list.h, Stops: acc, Focused: !m.chatFocus, Phase: m.panelPhase(), Theme: m.th}
 	iw, ih := lp.Inner()
 	var inner string
 	switch {
@@ -108,13 +136,17 @@ func (m Model) viewBoard() string {
 		inner = emptyBoard(m.th, stops, iw, m.blinking())
 	default:
 		menu := m.threadMenu
-		inner = "\n" + menu.Render(iw, ih-1, m.th, true)
+		inner = "\n" + menu.Render(iw, ih-1, m.th, !m.chatFocus)
 	}
-	left := lp.Render(inner)
+	left := lp.Render(inner) + "\n" + m.viewChatSection(m.chatSectionRect())
 	if pv.w == 0 {
 		return kit.Indent(left, list.x)
 	}
-	return kit.Indent(kit.SideBySide(1, left, m.threadPreview(pv, stops)), list.x)
+	right := m.threadPreview(pv, stops)
+	if m.chatFocus {
+		right = m.chatPreview(pv, stops)
+	}
+	return kit.Indent(kit.SideBySide(1, left, right), list.x)
 }
 
 // cat is the empty-board mascot. The eyes are the "o"s in the middle row;

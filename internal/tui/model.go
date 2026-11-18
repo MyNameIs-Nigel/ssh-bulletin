@@ -47,6 +47,7 @@ const (
 	scrModeration
 	scrDirectory
 	scrUserProfile
+	scrChat
 )
 
 type overlayKind int
@@ -102,6 +103,11 @@ type Model struct {
 	postTop        int // first visible line of the thread view
 	loading        bool
 	contentVersion int // invalidates reads started before a visibility change
+
+	// Live chat of the board in view, and whether the board screen's chat
+	// section (rather than its thread list) has focus.
+	chat      chatState
+	chatFocus bool
 
 	// Identity form (onboarding and profile editing).
 	form     identityForm
@@ -225,6 +231,8 @@ func (m Model) animating() bool {
 	case now.Sub(m.focusAt) < focusFlow:
 		return true
 	case m.loading, m.screen == scrModeration && m.mod.loading:
+		return true
+	case (m.screen == scrBoard || m.screen == scrChat) && (!m.chat.loaded || m.chat.sending || m.chat.loadingOlder):
 		return true
 	}
 	return false

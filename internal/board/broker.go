@@ -6,13 +6,15 @@ import "sync"
 type EventKind int
 
 const (
-	EventThread     EventKind = iota + 1 // a new thread (and its first post)
-	EventReply                           // a reply in an existing thread
-	EventKudos                           // kudos changed on a post
-	EventProfile                         // an account changed its handle/palette
-	EventRole                            // an account gained or lost admin access
-	EventReview                          // the private review queue or history changed
-	EventModeration                      // a thread or post changed visibility
+	EventThread      EventKind = iota + 1 // a new thread (and its first post)
+	EventReply                            // a reply in an existing thread
+	EventKudos                            // kudos changed on a post
+	EventProfile                          // an account changed its handle/palette
+	EventRole                             // an account gained or lost admin access
+	EventReview                           // the private review queue or history changed
+	EventModeration                       // a thread or post changed visibility
+	EventChat                             // a live chat message was sent
+	EventChatRemoved                      // a live chat message was deleted or removed
 )
 
 // Event is broadcast to every live session so screens refresh in place.
@@ -22,6 +24,7 @@ type Event struct {
 	BoardID   int64
 	ThreadID  int64
 	PostID    int64
+	MessageID int64  // live chat message, for EventChat and EventChatRemoved
 	Actor     string // handle of whoever caused it
 	Title     string // thread title, for toasts
 }

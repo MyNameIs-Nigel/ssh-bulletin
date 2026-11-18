@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mynameis-nigel/ssh-bulletin/internal/board"
 	"github.com/mynameis-nigel/ssh-bulletin/internal/tui/kit"
@@ -227,7 +228,9 @@ func withScrollbar(block string, top, height, total int, th kit.Theme, stops []c
 		if i >= pos && i < pos+thumb {
 			mark = kit.S(kit.At(stops, float64(i)/float64(max(1, height-1)))).Render("┃")
 		}
-		rows[i] = kit.Fit(r, w-1) + mark
+		// Cut the last cell without an ellipsis: rows are padded to the
+		// full width, so a "…" would land beside the bar on every row.
+		rows[i] = ansi.Truncate(r, w-1, "") + mark
 	}
 	return strings.Join(rows, "\n")
 }

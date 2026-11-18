@@ -62,6 +62,8 @@ func (m Model) compose3() string {
 			bodyStr = m.viewBoard()
 		case scrThread:
 			bodyStr = m.viewThread()
+		case scrChat:
+			bodyStr = m.viewChat()
 		case scrModeration:
 			bodyStr = m.viewModeration()
 		case scrProfile:
@@ -95,6 +97,8 @@ func (m Model) masthead() string {
 		crumbs = append(crumbs, m.curBoard.Title)
 	case scrThread:
 		crumbs = append(crumbs, m.curBoard.Title, clip(m.curThread.Title, 32))
+	case scrChat:
+		crumbs = append(crumbs, m.curBoard.Title, "live chat")
 	case scrModeration:
 		crumbs = []string{"moderation"}
 	case scrProfile:
@@ -183,7 +187,12 @@ func (m Model) hints() []kit.Hint {
 		}
 		return []kit.Hint{{"↑↓", "move"}, {"⏎", "open"}, {"u", "users"}, {"p", "edit"}, {"n", "new thread"}, {"/", "jump"}, {"?", "help"}}
 	case scrBoard:
-		return []kit.Hint{{"⏎", "read"}, {"o", "options"}, {"↑↓", "move"}, {"n", "new thread"}, {"esc", "back"}, {"?", "help"}}
+		if m.chatFocus {
+			return []kit.Hint{{"⏎", "join chat"}, {"tab", "threads"}, {"n", "new thread"}, {"esc", "back"}, {"?", "help"}}
+		}
+		return []kit.Hint{{"⏎", "read"}, {"o", "options"}, {"↑↓", "move"}, {"tab", "chat"}, {"n", "new thread"}, {"esc", "back"}, {"?", "help"}}
+	case scrChat:
+		return m.chatHints()
 	case scrThread:
 		hints := []kit.Hint{{"↑↓", "posts"}, {"o", "options"}}
 		if !m.curThread.Removed {
