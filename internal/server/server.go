@@ -168,6 +168,8 @@ func (srv *Server) newProgram(s ssh.Session) *tea.Program {
 		Version:     srv.version,
 	})
 	opts := append(bubbletea.MakeOptions(s), tea.WithColorProfile(colorprofile.TrueColor))
+	pty, _, _ := s.Pty()
+	opts = append(opts, tea.WithEnvironment(teaSessionEnvironment(s.Environ(), pty.Term)))
 	return tea.NewProgram(model, opts...)
 }
 
