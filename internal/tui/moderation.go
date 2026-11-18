@@ -455,7 +455,7 @@ func (m Model) viewModerationForm() string {
 	case f.busy:
 		lines = append(lines, "Saving…")
 	default:
-		lines = append(lines, kit.Hints(hints, m.th, m.accent(), w-6))
+		lines = append(lines, m.hintBar(hints, m.accent(), w-6, "modform"))
 	}
 	body := strings.Join(lines, "\n")
 	p := kit.Panel{Title: title, Width: w, Height: lipgloss.Height(body) + 2,

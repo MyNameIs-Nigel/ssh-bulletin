@@ -30,6 +30,13 @@ type Menu struct {
 	glow   float64 // animated highlight position, in items
 	vel    float64
 	Rows   int // rows per item: 2 (title+desc) or 1
+
+	// HotKey, when set, names each item's hot spot (see Hot), so a click or
+	// hover can find it. Lit is the key under the pointer, which glows
+	// without moving the selection, and Phase is its gradient's flow.
+	HotKey func(i int) string
+	Lit    string
+	Phase  float64
 }
 
 // NewMenu builds a two-row menu.
@@ -148,9 +155,17 @@ func (m *Menu) Render(width, height int, th Theme, focused bool) string {
 		dist := math.Abs(m.glow - float64(i))
 		lit := math.Max(0, 1-dist)
 		selected := i == m.Cursor
+		key := ""
+		if m.HotKey != nil {
+			key = m.HotKey(i)
+		}
+		hover := key != "" && key == m.Lit
 
 		// Left rail: a vertical gradient bar that brightens with the glow.
 		rail := func(row int) string {
+			if hover && lit <= 0.5 {
+				return S(Lerp(th.Faint, At(stops, float64(row)/float64(max(1, m.rows()-1))), 0.6)).Render("▏")
+			}
 			if lit <= 0.02 {
 				return " "
 			}
@@ -178,6 +193,8 @@ func (m *Menu) Render(width, height int, th Theme, focused bool) string {
 		switch {
 		case it.MutedTitle:
 			title = S(th.Muted).Italic(true).Render(it.Title)
+		case hover:
+			title = Gradient(it.Title, lipgloss.NewStyle().Bold(selected).Underline(true), stops, m.Phase)
 		case selected && focused:
 			title = Gradient(it.Title, lipgloss.NewStyle().Bold(true), stops, 0)
 		case selected:
@@ -193,7 +210,7 @@ func (m *Menu) Render(width, height int, th Theme, focused bool) string {
 		if selected {
 			row0 = glowRow(row0, width, th, stops, lit, focused)
 		}
-		out = append(out, row0)
+		out = append(out, Hot(key, row0))
 
 		if m.rows() > 1 {
 			desc := S(th.Muted).Render(it.Desc)
@@ -204,7 +221,7 @@ func (m *Menu) Render(width, height int, th Theme, focused bool) string {
 			if selected {
 				row1 = glowRow(row1, width, th, stops, lit, focused)
 			}
-			out = append(out, row1)
+			out = append(out, Hot(key, row1))
 		}
 		out = append(out, "")
 	}
@@ -225,6 +242,7 @@ func glowRow(row string, width int, th Theme, stops []color.Color, lit float64, 
 // compositing through a one-row Scene, which preserves each cell's foreground.
 func paintBg(row string, width int, stops []color.Color) string {
 	sc := NewScene(width, 1, Theme{Text: Hex("#ffffff")})
+	sc.Nested = true
 	sc.Base = row
 	sc.BackdropFn = func(x, _ int) color.Color {
 		return At(stops, float64(x)/float64(max(1, width-1)))

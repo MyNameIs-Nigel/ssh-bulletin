@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"image/color"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,9 +42,6 @@ func (m Model) homeLayout() (list, detail rect) {
 	}
 	return list, detail
 }
-
-// menuOrigin is where a menu's first row lands inside a panel.
-func menuOrigin(r rect) (x, y int) { return r.x + 2, r.y + 2 }
 
 func (m *Model) updateHome(k tea.KeyPressMsg) tea.Cmd {
 	switch k.String() {
@@ -90,6 +88,9 @@ func (m Model) viewHome() string {
 		Width: list.w, Height: list.h, Stops: acc, Focused: true, Phase: m.panelPhase(), Theme: m.th}
 	iw, ih := lp.Inner()
 	menu := m.boardMenu
+	m.menuHot(&menu, "board", func(m *Model, i int) tea.Cmd {
+		return pickOrOpen(&m.boardMenu, i, m.peekSelected, func() tea.Cmd { return m.enterBoard(m.boards[i]) })
+	})
 	left := lp.Render("\n" + menu.Render(iw, ih-1, m.th, true))
 
 	if detail.w == 0 {
@@ -131,13 +132,24 @@ func (m Model) boardDetail(r rect) string {
 			break
 		}
 		authorStops := kit.PaletteNamed(t.AuthorPalette).Stops
-		who := kit.GradientBold(t.AuthorHandle, authorStops) + m.friendFlair(t.AuthorID) +
+		who := m.authorName("peek:"+strconv.FormatInt(t.ID, 10), t.AuthorID, t.AuthorHandle, authorStops) + m.friendFlair(t.AuthorID) +
 			staffFlair(t.AuthorRole, kit.At(authorStops, 0.7)) + postFlair(t.Flair, authorStops)
 		style := kit.S(m.th.Text)
 		if t.OpeningUnavailable {
 			style = m.placeholderStyle()
 		}
-		b.WriteString(kit.S(kit.At(stops, float64(j)/5)).Render("▍") + style.Render(clip(t.Title, iw-4)) + "\n")
+		key := "peek:" + strconv.FormatInt(t.ID, 10)
+		title := style.Render(clip(t.Title, iw-4))
+		if m.lit(key) {
+			title = kit.Flow(clip(t.Title, iw-4), lipgloss.NewStyle(), stops, true, m.phase(), m.th)
+		}
+		t, bd := t, bd
+		title = m.hot(key, func(m *Model) tea.Cmd {
+			m.curBoard = bd
+			m.setAccent(kit.PaletteNamed(bd.Palette).Stops)
+			return m.enterThread(t, 0)
+		}, title)
+		b.WriteString(kit.S(kit.At(stops, float64(j)/5)).Render("▍") + title + "\n")
 		line := kit.S(m.th.Faint).Render("▍") + who + kit.S(m.th.Muted).Render(fmt.Sprintf(" · %s · %s", kit.Plural(t.ReplyCount, "reply", "replies"), kit.Ago(t.LastPostAt, m.now())))
 		if t.Pinned {
 			line += " " + pinnedChip(m.th)

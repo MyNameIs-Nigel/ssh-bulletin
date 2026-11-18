@@ -136,6 +136,10 @@ func (m Model) viewBoard() string {
 		inner = emptyBoard(m.th, stops, iw, m.blinking())
 	default:
 		menu := m.threadMenu
+		m.menuHot(&menu, "thread", func(m *Model, i int) tea.Cmd {
+			m.focusChatSection(false)
+			return pickOrOpen(&m.threadMenu, i, m.wantPreview, func() tea.Cmd { return m.enterThread(m.threads[i], 0) })
+		})
 		inner = "\n" + menu.Render(iw, ih-1, m.th, !m.chatFocus)
 	}
 	left := lp.Render(inner) + "\n" + m.viewChatSection(m.chatSectionRect())
@@ -188,7 +192,7 @@ func (m Model) threadPreview(r rect, stops []colorT) string {
 		title = m.placeholderStyle().Render(t.Title)
 	}
 	b.WriteString("\n" + kit.Wrap(title, iw) + "\n")
-	b.WriteString(kit.S(m.th.Muted).Render("started by ") + kit.GradientBold(t.AuthorHandle, astops) + m.friendFlair(t.AuthorID) +
+	b.WriteString(kit.S(m.th.Muted).Render("started by ") + m.authorName(previewScope(t.ID)+":thread", t.AuthorID, t.AuthorHandle, astops) + m.friendFlair(t.AuthorID) +
 		staffFlair(t.AuthorRole, kit.At(astops, 0.7)) + postFlair(t.Flair, astops) +
 		kit.S(m.th.Muted).Render(" · "+kit.Ago(t.CreatedAt, m.now())))
 	if t.Pinned {
@@ -196,11 +200,11 @@ func (m Model) threadPreview(r rect, stops []colorT) string {
 	}
 	b.WriteString("\n\n")
 	if posts, ok := m.previews[t.ID]; ok && len(posts) > 0 {
-		b.WriteString(m.renderPostBody(posts[0], iw, kit.S(m.th.Subtle)))
+		b.WriteString(m.renderPostBody(posts[0], iw, kit.S(m.th.Subtle), previewScope(posts[0].ID)))
 	} else {
 		b.WriteString(kit.Spinner(m.frame, stops))
 	}
 	b.WriteString("\n\n" + kit.FadeRule(iw, "─", kit.At(stops, 0.5), m.th.BgBottom) + "\n")
-	b.WriteString(kit.S(m.th.Faint).Render("⏎ read the whole thread"))
+	b.WriteString(m.hintBar([]kit.Hint{{"⏎", "read the whole thread"}}, stops, iw, "preview"))
 	return p.Render(b.String())
 }

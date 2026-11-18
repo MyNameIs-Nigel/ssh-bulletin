@@ -42,6 +42,8 @@ func (m *Model) updateOverlay(msg tea.Msg) tea.Cmd {
 		return m.updateModerationForm(msg)
 	case ovOptions:
 		return m.updateOptions(msg)
+	case ovLink:
+		return m.updateLinkModal(msg)
 	case ovHelp:
 		if _, ok := msg.(tea.KeyPressMsg); ok {
 			m.closeOverlay()
@@ -63,6 +65,8 @@ func (m Model) drawOverlay(sc *kit.Scene) {
 		card = m.viewModerationForm()
 	case ovOptions:
 		card = m.viewOptions()
+	case ovLink:
+		card = m.viewLinkModal()
 	case ovHelp:
 		card = m.viewHelp()
 	default:
@@ -102,7 +106,7 @@ func newCompose(th kit.Theme) composeState {
 	c.title.Prompt = "▍ "
 	c.title.Placeholder = "A title worth clicking"
 	c.title.CharLimit = board.MaxTitleLen
-	c.body.Placeholder = "Write something. Markdown-ish is fine; it renders as plain text."
+	c.body.Placeholder = "Write something. **bold**, *italic*, `code`, - lists and > quotes all work. Link @users, #boards and #12 threads."
 	c.body.ShowLineNumbers = false
 	c.body.CharLimit = board.MaxBodyLen
 	c.body.Prompt = "▍ "
@@ -248,7 +252,7 @@ func (m Model) viewCompose() string {
 		counter = kit.Spinner(m.frame, stops) + kit.S(m.th.Muted).Render(" posting…")
 	}
 	b.WriteString(counter + "\n")
-	b.WriteString(kit.Hints([]kit.Hint{{"ctrl+s", "post"}, {"tab", "switch"}, {"esc", "cancel"}}, m.th, stops, cw-6))
+	b.WriteString(m.hintBar([]kit.Hint{{"ctrl+s", "post"}, {"tab", "switch"}, {"esc", "cancel"}}, stops, cw-6, "compose"))
 	title := "✎ new thread"
 	if c.mode == composeReply {
 		title = "✎ reply"
@@ -393,6 +397,13 @@ func (m Model) viewPalette() string {
 	acc := m.accent()
 	m.pal.input.SetWidth(w - 8)
 	menu := m.pal.menu
+	m.menuHot(&menu, "palette", func(m *Model, i int) tea.Cmd {
+		m.closeOverlay()
+		if i < len(m.pal.shown) {
+			return m.pal.shown[i].run(m)
+		}
+		return nil
+	})
 	rows := min(m.h/2, max(1, len(m.pal.shown))*2-1)
 	list := menu.Render(w-4, rows, m.th, true)
 	if len(m.pal.shown) == 0 {
@@ -414,7 +425,7 @@ func (m Model) viewHelp() string {
 	}{
 		{"anywhere", []kit.Hint{{"/ ctrl+k", "jump palette"}, {"u", "user directory"}, {"p", "edit your profile"}, {"esc", "back"}, {"ctrl+c", "leave"}}},
 		{"lists", []kit.Hint{{"↑↓ j k", "move"}, {"⏎ → l", "open"}, {"g G", "top / bottom"}, {"n", "new thread"}, {"o", "thread options"}, {"tab", "board chat"}}},
-		{"threads", []kit.Hint{{"↑↓", "post by post"}, {"o", "post options"}, {"r ⏎", "reply"}, {"f +", "kudos"}, {"!", "report"}, {"pgup pgdn", "scroll"}}},
+		{"threads", []kit.Hint{{"↑↓", "post by post"}, {"tab", "links in post"}, {"o", "post options"}, {"r ⏎", "reply"}, {"f +", "kudos"}, {"!", "report"}}},
 		{"writing", []kit.Hint{{"ctrl+s", "post"}, {"tab", "title ↔ body"}, {"esc", "cancel"}, {"⏎", "send in chat"}, {"tab", "chat: pick message"}}},
 	}
 	if m.canModerate() {
@@ -430,8 +441,14 @@ func (m Model) viewHelp() string {
 		}
 		return b.String()
 	}
+	code := func(s string) string { return kit.S(kit.At(acc, 0.5)).Bold(true).Render(s) }
+	format := kit.Gradient("FORMATTING", lipgloss.NewStyle().Bold(true), acc, 0) + "\n" +
+		code("**bold**  *italic*  `code`  ~~strike~~  - list  1. list  > quote") + "\n" +
+		code("@user  #board  #12") + kit.S(m.th.Subtle).Render(" thread ") + code("#12/3") + kit.S(m.th.Subtle).Render(" post ") +
+		code("[label](link)") + "\n" +
+		kit.S(m.th.Muted).Render("links outside the bulletin always show where they go first") + "\n"
 	body := "\n" + kit.SideBySide(4, col(0), col(1)) + "\n" + kit.SideBySide(4, col(2), col(3)) +
-		"\n" + kit.S(m.th.Faint).Render("your key is your account · posts are public to every arcade player")
+		"\n" + format + "\n" + kit.S(m.th.Faint).Render("your key is your account · posts are public to every arcade player")
 	p := kit.Panel{Title: "? help", Width: lipgloss.Width(body) + 6, Height: lipgloss.Height(body) + 3, Stops: acc, Focused: true,
 		Phase: m.panelPhase(), Fill: m.th.Overlay, Theme: m.th, PadX: 2}
 	return p.Render(body)

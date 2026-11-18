@@ -37,6 +37,9 @@ func TestEveryFrameIsExactlyTheTerminal(t *testing.T) {
 			if lipgloss.Height(out) != sz[1] {
 				t.Errorf("%v %v: height %d", sz, keys, lipgloss.Height(out))
 			}
+			if strings.Contains(out, "bulletin-hot:") {
+				t.Errorf("%v %v: a hot-spot mark reached the terminal", sz, keys)
+			}
 			for i, l := range strings.Split(out, "\n") {
 				if lipgloss.Width(l) != sz[0] {
 					t.Errorf("%v %v: row %d width %d", sz, keys, i, lipgloss.Width(l))

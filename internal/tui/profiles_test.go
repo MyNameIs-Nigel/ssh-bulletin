@@ -10,7 +10,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mynameis-nigel/ssh-bulletin/internal/board"
-	"github.com/mynameis-nigel/ssh-bulletin/internal/tui/kit"
 )
 
 func TestProfileNavigationAndPrivateFriendFlair(t *testing.T) {
@@ -44,12 +43,7 @@ func TestProfileNavigationAndPrivateFriendFlair(t *testing.T) {
 		t.Fatal("expected the friend's reply to be selected")
 	}
 	assertFriendBadge(m, true)
-	threadPanel := m.threadRect()
-	iw, ih := (kit.Panel{Width: threadPanel.w, Height: threadPanel.h, PadX: threadPadX}).Inner()
-	lines, starts := m.threadLines(iw)
-	click := tea.MouseClickMsg{Button: tea.MouseLeft, X: threadPanel.x + 1 + threadPadX + postHeaderOffset,
-		Y: threadPanel.y + 1 + starts[m.postCursor] - m.threadTop(len(lines), ih)}
-	m = drive(t, m, click)
+	m = clickOn(t, m, postScope(m.posts[m.postCursor].ID)+":author")
 	if m.screen != scrUserProfile || m.userProfile.data.ID != friend.ID {
 		t.Fatal("clicking the reply author did not open their profile")
 	}

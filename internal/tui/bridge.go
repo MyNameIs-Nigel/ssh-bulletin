@@ -12,13 +12,15 @@ import (
 )
 
 // The splash scene: a suspension bridge over moving water with birds
-// crossing the sky. The artwork is bridge.txt, by "jgs".
-//
-// TODO(attribution): the "jgs" tag is drawn bold and underlined as a stand-in
-// for a link to bridgeSource. It is not clickable yet.
+// crossing the sky. The artwork is bridge.txt, by "jgs". The "jgs" tag is a
+// hot spot (creditKey) that opens bridgeSource behind the external-link
+// warning, like any other link.
 //
 //go:embed bridge.txt
 var bridgeTxt string
+
+// creditKey is the artist's tag as a hot spot.
+const creditKey = "splash:credit"
 
 const (
 	bridgeTag    = "jgs"
@@ -274,7 +276,11 @@ func paintRuns(line []rune, ink []cellInk) string {
 		if ink[i].ul {
 			st = st.Bold(true).Underline(true)
 		}
-		sb.WriteString(st.Render(string(line[i:j])))
+		run := st.Render(string(line[i:j]))
+		if ink[i].ul {
+			run = kit.Hot(creditKey, run)
+		}
+		sb.WriteString(run)
 		i = j
 	}
 	return sb.String()

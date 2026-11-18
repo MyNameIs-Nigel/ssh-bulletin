@@ -16,6 +16,16 @@ import (
 // Update routes messages: global plumbing first, then the open overlay, then
 // the current screen.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if mm, ok := msg.(tea.MouseMotionMsg); ok {
+		m.lastInput = m.now()
+		if !m.onMotion(mm) {
+			// Nothing lit or unlit: the last frame still stands.
+			m.reuse = true
+			return m, m.ensureTicking()
+		}
+	}
+	m.reuse = false
+	m.stamp++
 	var cmds []tea.Cmd
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -103,6 +113,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case previewMsg:
 		if msg.version == m.contentVersion {
 			m.previews[msg.threadID] = msg.posts
+			m.mergeRefs(msg.refs)
 		}
 
 	case postsMsg:
@@ -122,6 +133,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setFlash("couldn't open thread")
 			break
 		}
+		m.mergeRefs(msg.refs)
 		m.curThread, m.posts = msg.thread, msg.posts
 		if msg.focus != 0 {
 			for i, p := range m.posts {
@@ -154,6 +166,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.userProfile.data.Palette != msg.profile.Palette {
 				m.setAccent(kit.PaletteNamed(msg.profile.Palette).Stops)
 			}
+			m.mergeRefs(msg.refs)
 			m.userProfile.data = msg.profile
 			m.userProfile.recent = min(m.userProfile.recent, max(0, len(msg.profile.Recent)-1))
 		}
@@ -287,6 +300,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseWheelMsg:
 		m.lastInput = m.now()
+		m.hover = "" // the content moves under the pointer
 		cmds = append(cmds, m.onWheel(msg))
 
 	case tea.MouseClickMsg:
@@ -298,9 +312,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
+		// The keyboard takes over: the pointer's highlight would only
+		// compete with the keyboard's until the mouse moves again.
+		screen, overlay := m.screen, m.overlay
 		cmds = append(cmds, m.routeInput(msg))
+		if m.screen != screen || m.overlay != overlay {
+			m.hover = ""
+		}
 	}
 	m.syncMenus()
+	m.trackLit()
 	cmds = append(cmds, m.ensureTicking())
 	return m, tea.Batch(cmds...)
 }
@@ -346,6 +367,10 @@ func (m *Model) routeInput(msg tea.Msg) tea.Cmd {
 	}
 	if m.screen == scrModeration && m.mod.detail != nil {
 		return m.updateModeration(key)
+	}
+	if m.screen == scrThread && m.linkSel >= 0 && (key.String() == "esc" || key.String() == "backspace") {
+		m.linkSel = -1 // put the link down before leaving the thread
+		return nil
 	}
 	if cmd, handled := m.globalKey(key); handled {
 		return cmd

@@ -54,7 +54,10 @@ func TestPostOptionsAndPlaceholders(t *testing.T) {
 	}
 	m = drive(t, m, key("o"))
 	assertOptions(m, "View author profile", "Delete opening post")
-	m = drive(t, m, key("down"), key("enter"), key("esc"))
+	if !strings.Contains(ansi.Strip(m.viewOptions()), "Reply linking this post") {
+		t.Fatal("a live post should offer a reply that links it")
+	}
+	m = drive(t, m, key("down"), key("down"), key("enter"), key("esc"))
 	if m.opts.confirming || m.posts[0].Deleted {
 		t.Fatal("cancel should leave the opening post in place")
 	}
@@ -70,7 +73,7 @@ func TestPostOptionsAndPlaceholders(t *testing.T) {
 
 	staff := drive(t, openThread(owner), key("down"), key("o"))
 	assertOptions(staff, "View author profile", "Delete reply", "Remove reply")
-	staff = drive(t, staff, key("down"), key("down"), key("enter"), tea.PasteMsg{Content: "Reviewed"},
+	staff = drive(t, staff, key("down"), key("down"), key("down"), key("enter"), tea.PasteMsg{Content: "Reviewed"},
 		key("enter"))
 	view := ansi.Strip(staff.View().Content)
 	if !staff.posts[1].Removed || !strings.Contains(view, "< removed >") || strings.Contains(view, "Staff reply to remove") {

@@ -2,6 +2,7 @@ package kit
 
 import (
 	"image/color"
+	"strings"
 
 	"charm.land/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -25,6 +26,15 @@ type Scene struct {
 	BackdropFn func(x, y int) color.Color
 	// OverrideBg paints the backdrop even where Base set a background.
 	OverrideBg bool
+	// Hot receives where each hot spot landed (see Hot). Hot marks are
+	// always erased from the output, unless Nested is set.
+	Hot *HotMap
+	// Nested passes hot marks through untouched, for a scene rendered into
+	// a piece of a larger frame (the outer scene collects them).
+	Nested bool
+	// Modal drops Base's hot spots: a modal is open over it, so only the
+	// overlays are interactive. A dimmed base is always treated as modal.
+	Modal bool
 
 	overlays []overlay
 }
@@ -86,6 +96,9 @@ func (s *Scene) Render() string {
 					c.Style.Bg = rowBg[y]
 				}
 			}
+			if (s.Modal || s.Dim > 0) && strings.HasPrefix(c.Link.URL, hotScheme) {
+				c.Link = uv.Link{}
+			}
 			if s.Dim > 0 {
 				fg := c.Style.Fg
 				if fg == nil {
@@ -122,6 +135,9 @@ func (s *Scene) Render() string {
 				}
 			}
 		}
+	}
+	if !s.Nested {
+		s.Hot.collect(cv, s.W, s.H)
 	}
 	return cv.Render()
 }

@@ -2,7 +2,6 @@ package kit
 
 import (
 	"image/color"
-	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/textarea"
@@ -11,39 +10,9 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// Hint is one key binding shown in the footer: {key, label}.
+// Hint is one key binding shown in the footer: {key, label}. The screens
+// draw them with hintBar, which makes each key clickable.
 type Hint = [2]string
-
-// Hints renders key chips ("⏎ open  ? help") fitted to width, dropping
-// trailing hints that do not fit rather than wrapping.
-func Hints(hints []Hint, th Theme, accent []color.Color, width int) string {
-	var parts []string
-	used := 0
-	for i, h := range hints {
-		key := lipgloss.NewStyle().Foreground(At(accent, float64(i)/float64(max(1, len(hints)-1)))).Bold(true).Render(h[0])
-		part := key + " " + S(th.Muted).Render(h[1])
-		w := lipgloss.Width(part) + 3
-		if used+w > width {
-			break
-		}
-		used += w
-		parts = append(parts, part)
-	}
-	return strings.Join(parts, S(th.Faint).Render(" · "))
-}
-
-// Crumbs renders a breadcrumb trail; the last crumb wears the accent.
-func Crumbs(crumbs []string, th Theme, accent []color.Color) string {
-	var out []string
-	for i, c := range crumbs {
-		if i == len(crumbs)-1 {
-			out = append(out, GradientBold(c, accent))
-		} else {
-			out = append(out, S(th.Muted).Render(c))
-		}
-	}
-	return strings.Join(out, S(th.Faint).Render("  ›  "))
-}
 
 // Spinner frames: a comet orbiting in braille.
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}

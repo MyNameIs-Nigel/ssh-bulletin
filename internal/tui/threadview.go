@@ -24,7 +24,41 @@ func (m Model) threadRect() rect {
 	return rect{(m.w - w) / 2, b.y, w, b.h}
 }
 
+// selectedLinks are the live links in the selected post.
+func (m Model) selectedLinks() []board.Target {
+	if m.postCursor >= len(m.posts) || m.posts[m.postCursor].Placeholder() != "" {
+		return nil
+	}
+	return m.bodyLinks(m.posts[m.postCursor].Body)
+}
+
 func (m *Model) updateThread(k tea.KeyPressMsg) tea.Cmd {
+	switch k.String() {
+	case "tab", "shift+tab":
+		// Walk the selected post's links; the walk wraps around.
+		if n := len(m.selectedLinks()); n > 0 {
+			if k.String() == "tab" {
+				m.linkSel = (m.linkSel + 1) % n
+			} else {
+				m.linkSel = (max(m.linkSel, 0) + n - 1) % n
+			}
+		}
+		return nil
+	case "enter":
+		if links := m.selectedLinks(); m.linkSel >= 0 && m.linkSel < len(links) {
+			return m.follow(links[m.linkSel])
+		}
+		if len(m.posts) > 0 {
+			m.openCompose(composeReply)
+		}
+		return nil
+	}
+	moved := m.postCursor
+	defer func() {
+		if m.postCursor != moved {
+			m.linkSel = -1
+		}
+	}()
 	switch k.String() {
 	case "up", "k":
 		if m.postCursor > 0 {
@@ -42,7 +76,7 @@ func (m *Model) updateThread(k tea.KeyPressMsg) tea.Cmd {
 		m.postTop += m.threadRect().h / 2
 	case "pgup", "ctrl+u":
 		m.postTop = max(0, m.postTop-m.threadRect().h/2)
-	case "r", "enter":
+	case "r":
 		if len(m.posts) > 0 {
 			m.openCompose(composeReply)
 		}
@@ -91,7 +125,7 @@ func (m Model) threadLines(iw int) (lines []string, starts []int) {
 	head := kit.Wrap(title, iw)
 	lines = append(lines, "")
 	lines = append(lines, strings.Split(head, "\n")...)
-	meta := kit.S(m.th.Muted).Render(fmt.Sprintf("%s · started %s", kit.Plural(m.curThread.ReplyCount, "reply", "replies"), kit.Ago(m.curThread.CreatedAt, m.now())))
+	meta := kit.S(m.th.Muted).Render(fmt.Sprintf("#%d · %s · started %s", m.curThread.ID, kit.Plural(m.curThread.ReplyCount, "reply", "replies"), kit.Ago(m.curThread.CreatedAt, m.now())))
 	if m.curThread.Pinned {
 		// Old threads stay on top because staff pinned them, not because
 		// they are current: say so where the age is shown.
@@ -114,7 +148,7 @@ func (m Model) postCard(p board.Post, idx, iw int, selected bool) []string {
 	astops := kit.PaletteNamed(p.AuthorPalette).Stops
 	sigil := strings.Split(kit.Sigil(p.AuthorKey, astops, 1), "\n")
 
-	name := kit.GradientBold(p.AuthorHandle, astops) + m.friendFlair(p.AuthorID) + staffFlair(p.AuthorRole, kit.At(astops, 0.7))
+	name := m.authorName(postScope(p.ID), p.AuthorID, p.AuthorHandle, astops) + m.friendFlair(p.AuthorID) + staffFlair(p.AuthorRole, kit.At(astops, 0.7))
 	if idx == 0 {
 		name += " " + kit.Chip("OP", kit.At(astops, 0.7), true)
 	}
@@ -134,7 +168,7 @@ func (m Model) postCard(p board.Post, idx, iw int, selected bool) []string {
 	if selected {
 		ink = m.th.Text
 	}
-	body := m.renderPostBody(p, bodyW, kit.S(ink))
+	body := m.renderPostBody(p, bodyW, kit.S(ink), postScope(p.ID))
 	right := append([]string{head}, strings.Split(body, "\n")...)
 	n := max(len(right), len(sigil))
 	out := make([]string, n)
@@ -160,11 +194,31 @@ func (m Model) placeholderStyle() lipgloss.Style {
 	return kit.S(m.th.Muted).Italic(true)
 }
 
-func (m Model) renderPostBody(p board.Post, width int, style lipgloss.Style) string {
+// renderPostBody draws a post's text, its links hot spots within scope.
+func (m Model) renderPostBody(p board.Post, width int, style lipgloss.Style, scope string) string {
 	if marker := p.Placeholder(); marker != "" {
 		return m.placeholderStyle().Render(marker)
 	}
-	return style.Render(kit.Wrap(p.Body, width))
+	return strings.Join(m.richBody(p.Body, width, richOpts{ink: style, accent: m.boardStops(m.curThread.BoardID), scope: scope}), "\n")
+}
+
+// boardStops is a board's gradient by id.
+func (m Model) boardStops(id int64) []colorT {
+	if m.curBoard.ID == id && id != 0 {
+		return kit.PaletteNamed(m.curBoard.Palette).Stops
+	}
+	return m.stopsForBoard(id)
+}
+
+// authorName draws a handle in its owner's gradient as a hot spot that opens
+// their profile. Scope keeps each place a name appears its own hot spot.
+func (m Model) authorName(scope string, id int64, handle string, stops []colorT) string {
+	key := ""
+	if scope != "" {
+		key = scope + ":author"
+	}
+	name := kit.Flow(handle, lipgloss.NewStyle().Bold(true), stops, m.lit(key), m.phase(), m.th)
+	return m.hot(key, func(m *Model) tea.Cmd { return m.openUserProfile(id) }, name)
 }
 
 // followCursor scrolls so the selected post's header is on screen.
