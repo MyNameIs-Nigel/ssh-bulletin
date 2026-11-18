@@ -59,6 +59,9 @@ var migrations = []string{
 		('workshop',  'The Workshop',   'Terminals, dotfiles, things you built',   'reef',   30),
 		('ideas',     'Idea Board',     'What should the arcade build next?',      'orchid', 40),
 		('offtopic',  'Off the Grid',   'Everything else.',                        'ember',  50);`,
+	// v2: lobby tagline copy. Board taglines are stored data, so editing v1
+	// would not reach databases that already ran it.
+	`UPDATE boards SET tagline = 'Say hi. Introduce yourself.' WHERE slug = 'lobby';`,
 }
 
 func (st *Store) migrate(ctx context.Context) error {

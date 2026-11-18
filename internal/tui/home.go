@@ -138,7 +138,7 @@ func (m Model) boardDetail(r rect) string {
 	// The community card sits at the bottom of the pane.
 	content := kit.Block(b.String(), iw, ih-4)
 	community := statLine(m.th, m.th.Brand.Stops,
-		[2]string{fmt.Sprint(m.stats.Accounts), plural(m.stats.Accounts, "key", "keys")},
+		[2]string{fmt.Sprint(m.stats.Accounts), plural(m.stats.Accounts, "user", "users")},
 		[2]string{fmt.Sprint(m.stats.Threads), plural(m.stats.Threads, "thread", "threads")},
 		[2]string{fmt.Sprint(m.stats.Posts), plural(m.stats.Posts, "post", "posts")})
 	content += "\n" + kit.FadeRule(iw, "┄", m.th.Line, m.th.BgBottom) + "\n" + kit.S(m.th.Muted).Render("across the bulletin") + "\n" + community
