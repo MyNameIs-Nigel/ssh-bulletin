@@ -6,20 +6,24 @@ import "sync"
 type EventKind int
 
 const (
-	EventThread  EventKind = iota + 1 // a new thread (and its first post)
-	EventReply                        // a reply in an existing thread
-	EventKudos                        // kudos changed on a post
-	EventProfile                      // an account changed its handle/palette
+	EventThread     EventKind = iota + 1 // a new thread (and its first post)
+	EventReply                           // a reply in an existing thread
+	EventKudos                           // kudos changed on a post
+	EventProfile                         // an account changed its handle/palette
+	EventRole                            // an account gained or lost admin access
+	EventReview                          // the private review queue or history changed
+	EventModeration                      // a thread or post changed visibility
 )
 
 // Event is broadcast to every live session so screens refresh in place.
 type Event struct {
-	Kind     EventKind
-	BoardID  int64
-	ThreadID int64
-	PostID   int64
-	Actor    string // handle of whoever caused it
-	Title    string // thread title, for toasts
+	Kind      EventKind
+	AccountID int64
+	BoardID   int64
+	ThreadID  int64
+	PostID    int64
+	Actor     string // handle of whoever caused it
+	Title     string // thread title, for toasts
 }
 
 // Broker fans events out to subscribers. Delivery is best-effort: a slow

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"math"
 	"strings"
 	"time"
@@ -9,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/mynameis-nigel/ssh-bulletin/internal/board"
 	"github.com/mynameis-nigel/ssh-bulletin/internal/tui/kit"
 )
 
@@ -60,6 +62,8 @@ func (m Model) compose3() string {
 			bodyStr = m.viewBoard()
 		case scrThread:
 			bodyStr = m.viewThread()
+		case scrModeration:
+			bodyStr = m.viewModeration()
 		case scrProfile:
 			bodyStr = m.viewIdentity(true)
 		}
@@ -87,6 +91,8 @@ func (m Model) masthead() string {
 		crumbs = append(crumbs, m.curBoard.Title)
 	case scrThread:
 		crumbs = append(crumbs, m.curBoard.Title, clip(m.curThread.Title, 32))
+	case scrModeration:
+		crumbs = []string{"moderation"}
 	case scrProfile:
 		crumbs = []string{"you"}
 	}
@@ -98,7 +104,7 @@ func (m Model) masthead() string {
 	if m.acct != nil {
 		// The handle wears its palette as ink rather than as a filled tag: a
 		// filled cell can only have square corners in a terminal.
-		right += "  " + kit.GradientBold(m.acct.Handle, kit.PaletteNamed(m.acct.Palette).Stops) + " "
+		right += "  " + kit.GradientBold(m.acct.Handle, kit.PaletteNamed(m.acct.Palette).Stops) + staffFlair(m.acct.Role, m.th.Warn) + " "
 	}
 
 	lw, mw, rw := lipgloss.Width(brand), lipgloss.Width(mid), lipgloss.Width(right)
@@ -144,6 +150,13 @@ func (m Model) footer() string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
+func staffFlair(role board.Role, ink color.Color) string {
+	if role.CanModerate() {
+		return " " + kit.Chip(string(role), ink, true)
+	}
+	return ""
+}
+
 func versionLabel(v string) string {
 	if v == "" || v == "dev" {
 		return "dev build"
@@ -154,11 +167,19 @@ func versionLabel(v string) string {
 func (m Model) hints() []kit.Hint {
 	switch m.screen {
 	case scrHome:
+		if m.canModerate() {
+			return []kit.Hint{{"↑↓", "move"}, {"⏎", "open"}, {"m", "moderation"}, {"/", "jump"}, {"?", "help"}}
+		}
 		return []kit.Hint{{"↑↓", "move"}, {"⏎", "open"}, {"n", "new thread"}, {"/", "jump"}, {"p", "profile"}, {"?", "help"}, {"q", "quit"}}
 	case scrBoard:
 		return []kit.Hint{{"↑↓", "move"}, {"⏎", "read"}, {"n", "new thread"}, {"esc", "back"}, {"/", "jump"}, {"?", "help"}}
 	case scrThread:
-		return []kit.Hint{{"↑↓", "posts"}, {"r", "reply"}, {"f", "kudos"}, {"pgup/dn", "scroll"}, {"esc", "back"}, {"?", "help"}}
+		if m.canModerate() {
+			return []kit.Hint{{"↑↓", "posts"}, {"r", "reply"}, {"!", "report"}, {"x", "remove"}, {"?", "help"}}
+		}
+		return []kit.Hint{{"↑↓", "posts"}, {"r", "reply"}, {"!", "report"}, {"f", "kudos"}, {"?", "help"}}
+	case scrModeration:
+		return m.moderationHints()
 	case scrProfile:
 		return []kit.Hint{{"tab", "field"}, {"←→", "palette"}, {"ctrl+s", "save"}, {"esc", "back"}}
 	}

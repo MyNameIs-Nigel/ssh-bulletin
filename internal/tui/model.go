@@ -44,6 +44,7 @@ const (
 	scrBoard
 	scrThread
 	scrProfile
+	scrModeration
 )
 
 type overlayKind int
@@ -53,6 +54,7 @@ const (
 	ovCompose
 	ovPalette
 	ovHelp
+	ovModeration
 )
 
 // Model is the root Bubble Tea model.
@@ -83,22 +85,28 @@ type Model struct {
 	blinkGen  int       // identifies the live blink timer; stale ones are dropped
 
 	// Data.
-	stats      board.Stats
-	boards     []board.Board
-	boardMenu  kit.Menu
-	curBoard   board.Board
-	threads    []board.Thread
-	threadMenu kit.Menu
-	previews   map[int64][]board.Post   // board screen: opening posts by thread
-	peek       map[int64][]board.Thread // home screen: recent threads by board
-	curThread  board.Thread
-	posts      []board.Post
-	postCursor int
-	postTop    int // first visible line of the thread view
-	loading    bool
+	stats          board.Stats
+	boards         []board.Board
+	boardMenu      kit.Menu
+	curBoard       board.Board
+	threads        []board.Thread
+	threadMenu     kit.Menu
+	previews       map[int64][]board.Post   // board screen: opening posts by thread
+	peek           map[int64][]board.Thread // home screen: recent threads by board
+	curThread      board.Thread
+	posts          []board.Post
+	postCursor     int
+	postTop        int // first visible line of the thread view
+	loading        bool
+	contentVersion int // invalidates reads started before a visibility change
 
 	// Identity form (onboarding and profile editing).
 	form identityForm
+
+	mod         moderationState
+	modForm     moderationForm
+	modRequest  int
+	roleRequest int
 
 	// Overlays.
 	overlay  overlayKind
@@ -176,7 +184,7 @@ func (m Model) myStops() []color.Color {
 
 // Init starts the event listener, the clock, and the splash animation.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{waitEvent(m.d.Events), clockTick(), loadHome(m.d)}
+	cmds := []tea.Cmd{waitEvent(m.d.Events), clockTick(), m.loadHome()}
 	if m.screen == scrSplash || m.screen == scrOnboard {
 		cmds = append(cmds, kit.Frame(m.gen))
 	}
@@ -205,7 +213,7 @@ func (m Model) animating() bool {
 		return true
 	case now.Sub(m.focusAt) < focusFlow:
 		return true
-	case m.loading:
+	case m.loading, m.screen == scrModeration && m.mod.loading:
 		return true
 	}
 	return false
@@ -235,24 +243,29 @@ func (m *Model) touchFocus() { m.focusAt = m.now() }
 // ---- messages ----------------------------------------------------------
 
 type homeMsg struct {
-	boards []board.Board
-	stats  board.Stats
-	err    error
+	version int
+	boards  []board.Board
+	stats   board.Stats
+	err     error
 }
 type threadsMsg struct {
+	version int
 	boardID int64
 	threads []board.Thread
 	err     error
 }
 type previewMsg struct {
+	version  int
 	threadID int64
 	posts    []board.Post
 }
 type postsMsg struct {
-	thread board.Thread
-	posts  []board.Post
-	err    error
-	focus  int64 // post id to put the cursor on, if any
+	version  int
+	threadID int64
+	thread   board.Thread
+	posts    []board.Post
+	err      error
+	focus    int64 // post id to put the cursor on, if any
 }
 type eventMsg board.Event
 type eventsClosedMsg struct{}
@@ -288,42 +301,49 @@ func clockTick() tea.Cmd {
 	return tea.Tick(15*time.Second, func(time.Time) tea.Msg { return clockMsg{} })
 }
 
-func loadHome(d Deps) tea.Cmd {
+func (m Model) loadHome() tea.Cmd {
+	d, version := m.d, m.contentVersion
 	return func() tea.Msg {
 		bs, err := d.Service.Boards(d.Context)
 		if err != nil {
-			return homeMsg{err: err}
+			return homeMsg{version: version, err: err}
 		}
 		st, err := d.Service.Stats(d.Context)
-		return homeMsg{boards: bs, stats: st, err: err}
+		return homeMsg{version: version, boards: bs, stats: st, err: err}
 	}
 }
 
-func loadThreads(d Deps, boardID int64) tea.Cmd {
+func (m Model) loadThreads(boardID int64) tea.Cmd {
+	d, version := m.d, m.contentVersion
 	return func() tea.Msg {
 		ts, err := d.Service.Threads(d.Context, boardID)
-		return threadsMsg{boardID: boardID, threads: ts, err: err}
+		return threadsMsg{version: version, boardID: boardID, threads: ts, err: err}
 	}
 }
 
-func loadPreview(d Deps, threadID int64) tea.Cmd {
+func (m Model) loadPreview(threadID int64) tea.Cmd {
+	d, version := m.d, m.contentVersion
 	return func() tea.Msg {
 		ps, _ := d.Service.Posts(d.Context, threadID, 0)
 		if len(ps) > 1 {
 			ps = ps[:1]
 		}
-		return previewMsg{threadID: threadID, posts: ps}
+		return previewMsg{version: version, threadID: threadID, posts: ps}
 	}
 }
 
-func loadPosts(d Deps, threadID, viewer, focus int64) tea.Cmd {
+func (m Model) loadPosts(threadID, focus int64) tea.Cmd {
+	d, version, viewer := m.d, m.contentVersion, m.viewerID()
 	return func() tea.Msg {
 		t, err := d.Service.Thread(d.Context, threadID)
 		if err != nil {
-			return postsMsg{err: err}
+			return postsMsg{version: version, threadID: threadID, err: err}
 		}
 		ps, err := d.Service.Posts(d.Context, threadID, viewer)
-		return postsMsg{thread: t, posts: ps, err: err, focus: focus}
+		if err == nil && len(ps) == 0 {
+			err = board.ErrNotFound
+		}
+		return postsMsg{version: version, threadID: threadID, thread: t, posts: ps, err: err, focus: focus}
 	}
 }
 

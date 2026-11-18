@@ -76,6 +76,16 @@ func FingerprintFromBytes(sum [32]byte) string {
 	return "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:])
 }
 
+// ValidFingerprint checks the complete canonical OpenSSH SHA-256 fingerprint.
+func ValidFingerprint(fp string) bool {
+	raw, ok := strings.CutPrefix(fp, "SHA256:")
+	if !ok {
+		return false
+	}
+	sum, err := base64.RawStdEncoding.Strict().DecodeString(raw)
+	return err == nil && len(sum) == sha256.Size && FingerprintFromBytes([32]byte(sum)) == fp
+}
+
 // SanitizeSlot normalizes an SSH username: lowercase, [a-z0-9_-], 1–32 chars.
 func SanitizeSlot(raw string) string {
 	raw = strings.ToLower(strings.TrimSpace(raw))
