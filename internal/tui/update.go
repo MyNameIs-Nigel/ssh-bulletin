@@ -37,7 +37,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.d.IdleTimeout > 0 && m.now().Sub(m.lastInput) > m.d.IdleTimeout {
 			return m, tea.Sequence(tea.Printf("Disconnected after %s idle. Your posts are saved.", m.d.IdleTimeout), tea.Quit)
 		}
-		return m, clockTick()
+		cmds = append(cmds, clockTick(), m.refreshRole(), m.loadModeration())
 
 	case eventsClosedMsg:
 		return m, nil
@@ -51,6 +51,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, waitEvent(m.d.Events), m.onEvent(board.Event(msg)))
 
 	case homeMsg:
+		if msg.version != m.contentVersion {
+			break
+		}
 		if msg.err != nil {
 			m.setFlash("couldn't load boards: " + msg.err.Error())
 			break
@@ -60,6 +63,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.peekSelected())
 
 	case threadsMsg:
+		if msg.version != m.contentVersion {
+			break
+		}
 		if msg.err != nil {
 			break
 		}
@@ -82,10 +88,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case previewMsg:
-		m.previews[msg.threadID] = msg.posts
+		if msg.version == m.contentVersion {
+			m.previews[msg.threadID] = msg.posts
+		}
 
 	case postsMsg:
+		if msg.version != m.contentVersion || m.screen != scrThread || msg.threadID != m.curThread.ID {
+			break
+		}
 		m.loading = false
+		if errors.Is(msg.err, board.ErrNotFound) {
+			m.posts = nil
+			m.closeOverlay()
+			m.compose.reset()
+			m.setFlash("This thread was removed")
+			cmds = append(cmds, m.back())
+			break
+		}
 		if msg.err != nil {
 			m.setFlash("couldn't open thread")
 			break
@@ -101,6 +120,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.postCursor = max(0, min(m.postCursor, len(m.posts)-1))
 
 	case registeredMsg:
+		m.form.busy = false
 		if msg.err != nil {
 			m.form.err = friendly(msg.err)
 			break
@@ -116,25 +136,59 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.toasts.Push(m.now(), "Profile saved", "", kit.PaletteNamed(acct.Palette).Stops)
 			m.setAccent(kit.PaletteNamed(acct.Palette).Stops)
 		}
-		cmds = append(cmds, loadHome(m.d))
+		cmds = append(cmds, m.loadHome())
 
 	case postedMsg:
+		m.compose.busy = false
 		if msg.err != nil {
 			m.compose.err = friendly(msg.err)
 			break
 		}
 		m.closeOverlay()
 		m.compose.reset()
-		m.loading = true
-		cmds = append(cmds, loadPosts(m.d, msg.threadID, m.viewerID(), msg.postID), loadHome(m.d))
 		if m.screen != scrThread {
-			m.enterThread(board.Thread{ID: msg.threadID, BoardID: m.curBoard.ID})
+			cmds = append(cmds, m.enterThread(board.Thread{ID: msg.threadID, BoardID: m.curBoard.ID}))
+		} else {
+			cmds = append(cmds, m.loadPosts(msg.threadID, msg.postID))
 		}
+		cmds = append(cmds, m.loadHome())
 		m.toasts.Push(m.now(), "Posted", "", m.myStops())
 
 	case kudosMsg:
 		if msg.err != nil {
 			m.setFlash(friendly(msg.err))
+		}
+
+	case moderationPageMsg:
+		cmds = append(cmds, m.receiveModerationPage(msg))
+
+	case moderationResultMsg:
+		if m.overlay != ovModeration {
+			break
+		}
+		m.modForm.busy = false
+		if errors.Is(msg.err, board.ErrForbidden) {
+			m.leaveModeration()
+			cmds = append(cmds, m.refreshRole())
+			m.setFlash(friendly(msg.err))
+		} else if msg.err != nil {
+			m.modForm.err = friendly(msg.err)
+		} else {
+			m.closeOverlay()
+			m.mod.detail = nil
+			m.toasts.Push(m.now(), msg.message, "", m.myStops())
+			cmds = append(cmds, m.loadModeration())
+		}
+
+	case roleMsg:
+		if m.acct != nil && msg.err == nil && msg.request == m.roleRequest {
+			a := *m.acct
+			wasStaff := a.Role.CanModerate()
+			a.Role = msg.role
+			m.acct = &a
+			if wasStaff && !m.canModerate() {
+				m.leaveModeration()
+			}
 		}
 
 	case tea.PasteMsg:
@@ -191,6 +245,9 @@ func (m *Model) routeInput(msg tea.Msg) tea.Cmd {
 	if !ok {
 		return nil
 	}
+	if m.screen == scrModeration && m.mod.detail != nil {
+		return m.updateModeration(key)
+	}
 	if cmd, handled := m.globalKey(key); handled {
 		return cmd
 	}
@@ -201,6 +258,8 @@ func (m *Model) routeInput(msg tea.Msg) tea.Cmd {
 		return m.updateBoard(key)
 	case scrThread:
 		return m.updateThread(key)
+	case scrModeration:
+		return m.updateModeration(key)
 	}
 	return nil
 }
@@ -216,6 +275,8 @@ func (m *Model) globalKey(k tea.KeyPressMsg) (tea.Cmd, bool) {
 	case "ctrl+k", "/", ":":
 		m.openPalette()
 		return nil, true
+	case "m":
+		return m.openModeration(), true
 	case "?":
 		m.openOverlay(ovHelp)
 		return nil, true
@@ -261,12 +322,12 @@ func (m *Model) onEvent(ev board.Event) tea.Cmd {
 	mine := m.acct != nil && ev.Actor == m.acct.Handle
 	switch ev.Kind {
 	case board.EventThread, board.EventReply:
-		cmds = append(cmds, loadHome(m.d))
+		cmds = append(cmds, m.loadHome())
 		if m.screen == scrBoard && ev.BoardID == m.curBoard.ID {
-			cmds = append(cmds, loadThreads(m.d, m.curBoard.ID))
+			cmds = append(cmds, m.loadThreads(m.curBoard.ID))
 		}
 		if m.screen == scrThread && ev.ThreadID == m.curThread.ID && !mine {
-			cmds = append(cmds, loadPosts(m.d, m.curThread.ID, m.viewerID(), 0))
+			cmds = append(cmds, m.loadPosts(m.curThread.ID, 0))
 		}
 		if !mine && m.screen != scrSplash && m.screen != scrOnboard {
 			verb := "replied in"
@@ -277,15 +338,42 @@ func (m *Model) onEvent(ev board.Event) tea.Cmd {
 		}
 	case board.EventKudos:
 		if m.screen == scrThread && ev.ThreadID == m.curThread.ID {
-			cmds = append(cmds, loadPosts(m.d, m.curThread.ID, m.viewerID(), 0))
+			cmds = append(cmds, m.loadPosts(m.curThread.ID, 0))
 		}
-	case board.EventProfile:
-		cmds = append(cmds, loadHome(m.d))
+	case board.EventRole:
+		if ev.AccountID == m.viewerID() {
+			cmds = append(cmds, m.refreshRole())
+		}
+		if m.overlay == ovPalette {
+			m.closeOverlay()
+		}
+		cmds = append(cmds, m.loadModeration(), m.loadHome())
 		if m.screen == scrThread {
-			cmds = append(cmds, loadPosts(m.d, m.curThread.ID, m.viewerID(), 0))
+			cmds = append(cmds, m.loadPosts(m.curThread.ID, 0))
 		}
 		if m.screen == scrBoard {
-			cmds = append(cmds, loadThreads(m.d, m.curBoard.ID))
+			cmds = append(cmds, m.loadThreads(m.curBoard.ID))
+		}
+	case board.EventReview:
+		cmds = append(cmds, m.loadModeration())
+	case board.EventModeration:
+		m.contentVersion++
+		delete(m.previews, ev.ThreadID)
+		clear(m.peek)
+		cmds = append(cmds, m.loadModeration(), m.loadHome())
+		if m.screen == scrThread {
+			cmds = append(cmds, m.loadPosts(m.curThread.ID, 0))
+		}
+		if m.screen == scrBoard {
+			cmds = append(cmds, m.loadThreads(m.curBoard.ID))
+		}
+	case board.EventProfile:
+		cmds = append(cmds, m.loadHome())
+		if m.screen == scrThread {
+			cmds = append(cmds, m.loadPosts(m.curThread.ID, 0))
+		}
+		if m.screen == scrBoard {
+			cmds = append(cmds, m.loadThreads(m.curBoard.ID))
 		}
 	}
 	return tea.Batch(cmds...)
@@ -312,6 +400,10 @@ func (m *Model) leaveSplash() {
 }
 
 func (m *Model) goHome() {
+	if m.screen == scrModeration {
+		m.mod = moderationState{}
+		m.modRequest++
+	}
 	m.screen = scrHome
 	m.setAccent(m.th.Brand.Stops)
 	m.boardMenu.Snap()
@@ -327,7 +419,7 @@ func (m *Model) enterBoard(b board.Board) tea.Cmd {
 	m.loading = true
 	m.setAccent(kit.PaletteNamed(b.Palette).Stops)
 	m.touchFocus()
-	return loadThreads(m.d, b.ID)
+	return m.loadThreads(b.ID)
 }
 
 func (m *Model) enterThread(t board.Thread) tea.Cmd {
@@ -337,7 +429,7 @@ func (m *Model) enterThread(t board.Thread) tea.Cmd {
 	m.postCursor, m.postTop = 0, 0
 	m.loading = true
 	m.touchFocus()
-	return loadPosts(m.d, t.ID, m.viewerID(), 0)
+	return m.loadPosts(t.ID, 0)
 }
 
 func (m *Model) openProfile() {
@@ -356,8 +448,8 @@ func (m *Model) back() tea.Cmd {
 		m.screen = scrBoard
 		m.setAccent(kit.PaletteNamed(m.curBoard.Palette).Stops)
 		m.touchFocus()
-		return loadThreads(m.d, m.curBoard.ID)
-	case scrBoard, scrProfile:
+		return m.loadThreads(m.curBoard.ID)
+	case scrBoard, scrProfile, scrModeration:
 		m.goHome()
 	}
 	return nil
@@ -371,7 +463,10 @@ func (m *Model) setFlash(s string) {
 // friendly turns errors into short sentences for the UI.
 func friendly(err error) string {
 	for _, known := range []error{board.ErrHandleInvalid, board.ErrHandleTaken, board.ErrEmptyTitle,
-		board.ErrEmptyBody, board.ErrTooLong, board.ErrNoAccount, board.ErrNotFound} {
+		board.ErrEmptyBody, board.ErrTooLong, board.ErrNoAccount, board.ErrNotFound,
+		board.ErrForbidden, board.ErrInvalidFingerprint, board.ErrKeyMismatch, board.ErrOwnerRole,
+		board.ErrReasonRequired, board.ErrAlreadyReported, board.ErrReviewChanged, board.ErrPostLimit,
+		board.ErrNewcomerLimit, board.ErrReportLimit} {
 		if errors.Is(err, known) {
 			return known.Error()
 		}

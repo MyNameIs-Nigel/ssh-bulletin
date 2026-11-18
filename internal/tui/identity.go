@@ -187,6 +187,9 @@ func (m Model) viewIdentity(edit bool) string {
 	if f.err != "" {
 		b.WriteString("\n" + kit.Center(kit.S(m.th.Bad).Render("✗ "+f.err), m.w) + "\n")
 	}
+	if edit {
+		b.WriteString("\n" + kit.Center(m.d.Fingerprint, m.w) + "\n")
+	}
 	if !edit {
 		b.WriteString("\n" + kit.Center(kit.Hints([]kit.Hint{{"tab", "next field"}, {"←→", "palette"}, {"⏎", "create account"}, {"esc", "leave"}}, m.th, stops, m.w), m.w))
 		out := b.String()
@@ -257,11 +260,12 @@ func (m Model) previewCard(w int, edit bool) string {
 	name := kit.Gradient(handle, lipgloss.NewStyle().Bold(true), stops, shimmer)
 	meta := kit.S(m.th.Muted).Render("new poster")
 	if m.acct != nil {
+		name += staffFlair(m.acct.Role, kit.At(stops, 0.7))
 		meta = kit.S(m.th.Muted).Render(fmt.Sprintf("%s · joined %s", kit.Plural(m.acct.PostCount, "post", "posts"),
 			time.Unix(m.acct.CreatedAt, 0).UTC().Format("Jan 2006")))
 	}
 	idW := max(8, w-4-lipgloss.Width(sigil)-2)
-	idBlock := kit.Fit(name, idW) + "\n" + kit.Fit(meta, idW) + "\n" + kit.Fit(kit.S(m.th.Faint).Render(m.d.Fingerprint), idW)
+	idBlock := kit.Fit(name, idW) + "\n" + kit.Fit(meta, idW)
 	top := kit.SideBySide(2, sigil, idBlock)
 
 	sampleStyle, sample := kit.S(m.th.Subtle), "This is how your posts will look."
