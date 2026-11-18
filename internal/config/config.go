@@ -10,32 +10,35 @@ import (
 
 // Config holds server settings.
 type Config struct {
-	DevMode             bool // BULLETIN_DEV_MODE: seed demo content on an empty DB
-	ListenHost          string
-	ListenPort          int
-	HostKeyPath         string
-	IdleTimeout         time.Duration
-	MaxSessionsPerKey   int
-	MaxConnections      int
-	LogLevel            string
-	LogFormat           string
-	RateLimitPerSecond  float64
-	RateLimitBurst      int
-	RateLimitMaxEntries int
-	DBPath              string
-	ProxyKeysPath       string // trusted arcade proxy keys; empty = direct-only dev
+	DevMode              bool // BULLETIN_DEV_MODE: seed demo content on an empty DB
+	ListenHost           string
+	ListenPort           int
+	HostKeyPath          string
+	IdleTimeout          time.Duration
+	MaxSessionsPerKey    int
+	MaxSessionsPerSource int
+	MaxConnections       int
+	LogLevel             string
+	LogFormat            string
+	RateLimitPerSecond   float64
+	RateLimitBurst       int
+	RateLimitMaxEntries  int
+	DBPath               string
+	OwnerFingerprint     string
+	ProxyKeysPath        string // trusted arcade proxy keys; empty = direct-only dev
 }
 
 // Load reads configuration from the environment with documented defaults.
 func Load() (Config, error) {
 	var err error
 	cfg := Config{
-		ListenHost:    envOr("BULLETIN_LISTEN_HOST", "0.0.0.0"),
-		HostKeyPath:   envOr("BULLETIN_HOST_KEY_PATH", "var/ssh_host_key"),
-		LogLevel:      envOr("BULLETIN_LOG_LEVEL", "info"),
-		LogFormat:     envOr("BULLETIN_LOG_FORMAT", "text"),
-		DBPath:        envOr("BULLETIN_DB_PATH", "var/bulletin.db"),
-		ProxyKeysPath: os.Getenv("BULLETIN_PROXY_KEYS_PATH"),
+		ListenHost:       envOr("BULLETIN_LISTEN_HOST", "0.0.0.0"),
+		HostKeyPath:      envOr("BULLETIN_HOST_KEY_PATH", "var/ssh_host_key"),
+		LogLevel:         envOr("BULLETIN_LOG_LEVEL", "info"),
+		LogFormat:        envOr("BULLETIN_LOG_FORMAT", "text"),
+		DBPath:           envOr("BULLETIN_DB_PATH", "var/bulletin.db"),
+		OwnerFingerprint: os.Getenv("BULLETIN_OWNER_FINGERPRINT"),
+		ProxyKeysPath:    os.Getenv("BULLETIN_PROXY_KEYS_PATH"),
 	}
 	if cfg.DevMode, err = envBoolOr("BULLETIN_DEV_MODE", false); err != nil {
 		return Config{}, err
@@ -47,6 +50,9 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	if cfg.MaxSessionsPerKey, err = envIntOr("BULLETIN_MAX_SESSIONS_PER_KEY", 3); err != nil {
+		return Config{}, err
+	}
+	if cfg.MaxSessionsPerSource, err = envIntOr("BULLETIN_MAX_SESSIONS_PER_SOURCE", 6); err != nil {
 		return Config{}, err
 	}
 	if cfg.MaxConnections, err = envIntOr("BULLETIN_MAX_CONNECTIONS", 100); err != nil {
@@ -67,6 +73,8 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("BULLETIN_LISTEN_PORT must be 1-65535, got %d", cfg.ListenPort)
 	case cfg.MaxSessionsPerKey < 1:
 		return Config{}, fmt.Errorf("BULLETIN_MAX_SESSIONS_PER_KEY must be at least 1")
+	case cfg.MaxSessionsPerSource < 1:
+		return Config{}, fmt.Errorf("BULLETIN_MAX_SESSIONS_PER_SOURCE must be at least 1")
 	case cfg.MaxConnections < 1:
 		return Config{}, fmt.Errorf("BULLETIN_MAX_CONNECTIONS must be at least 1")
 	case cfg.RateLimitPerSecond <= 0:

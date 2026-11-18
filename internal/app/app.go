@@ -55,6 +55,12 @@ func run() int {
 	}
 
 	svc := board.NewService(st, board.NewBroker(), time.Now)
+	if cfg.OwnerFingerprint != "" {
+		if err := svc.ConfigureOwner(ctx, cfg.OwnerFingerprint); err != nil {
+			logger.Error("BULLETIN_OWNER_FINGERPRINT", "error", err)
+			return 1
+		}
+	}
 	if cfg.DevMode {
 		if err := board.SeedDemo(ctx, svc, st); err != nil {
 			logger.Error("demo seed failed", "error", err)

@@ -3,6 +3,8 @@ package server
 import (
 	"fmt"
 	"io"
+	"net"
+	"net/netip"
 	"sync"
 
 	"charm.land/ssh"
@@ -10,27 +12,29 @@ import (
 	"github.com/mynameis-nigel/ssh-bulletin/internal/identity"
 )
 
-// SessionLimits tracks global and per-player concurrent sessions.
+// SessionLimits tracks global, per-key, and direct network concurrent sessions.
 type SessionLimits struct {
-	mu        sync.Mutex
-	global    int
-	perKey    map[string]int
-	maxGlobal int
-	maxPerKey int
-	resolver  *identity.Resolver
+	mu           sync.Mutex
+	global       int
+	perKey       map[string]int
+	perSource    map[netip.Prefix]int
+	maxGlobal    int
+	maxPerKey    int
+	maxPerSource int
+	resolver     *identity.Resolver
 }
 
-// NewSessionLimits creates a limiter keyed on the resolved player fingerprint.
-func NewSessionLimits(maxGlobal, maxPerKey int, resolver *identity.Resolver) *SessionLimits {
+func NewSessionLimits(maxGlobal, maxPerKey, maxPerSource int, resolver *identity.Resolver) *SessionLimits {
 	return &SessionLimits{
-		perKey:    make(map[string]int),
-		maxGlobal: maxGlobal,
-		maxPerKey: maxPerKey,
-		resolver:  resolver,
+		perKey:       make(map[string]int),
+		perSource:    make(map[netip.Prefix]int),
+		maxGlobal:    maxGlobal,
+		maxPerKey:    maxPerKey,
+		maxPerSource: maxPerSource,
+		resolver:     resolver,
 	}
 }
 
-// Middleware rejects connections when caps are exceeded.
 func (l *SessionLimits) Middleware() func(ssh.Handler) ssh.Handler {
 	return func(next ssh.Handler) ssh.Handler {
 		return func(s ssh.Session) {
@@ -40,48 +44,67 @@ func (l *SessionLimits) Middleware() func(ssh.Handler) ssh.Handler {
 				s.Exit(1)
 				return
 			}
-			// Keyed on the resolved player, never the wire key: behind the
-			// arcade every session arrives on the router's proxy key.
+			// The router's address is shared by all proxied sessions.
+			var source netip.Prefix
+			if !resolved.Proxied {
+				source = sourceNetwork(s.RemoteAddr())
+			}
 			fp := resolved.Fingerprint
-			if !l.acquire(fp) {
-				_, _ = io.WriteString(s, fmt.Sprintf(
-					"Too many active sessions (global max %d, per-key max %d). Try again later.\r\n",
-					l.maxGlobal, l.maxPerKey,
-				))
+			if refusal := l.acquire(fp, source); refusal != "" {
+				_, _ = io.WriteString(s, refusal+" Try again later.\r\n")
 				s.Exit(1)
 				return
 			}
-			defer l.release(fp)
+			defer l.release(fp, source)
 			next(s)
 		}
 	}
 }
 
-func (l *SessionLimits) acquire(fingerprint string) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	if l.global >= l.maxGlobal {
-		return false
+func sourceNetwork(addr net.Addr) netip.Prefix {
+	tcp, ok := addr.(*net.TCPAddr)
+	if !ok {
+		return netip.Prefix{}
 	}
-	if l.perKey[fingerprint] >= l.maxPerKey {
-		return false
+	ip := tcp.AddrPort().Addr().Unmap().WithZone("")
+	bits := 64
+	if ip.Is4() {
+		bits = 32
 	}
-
-	l.global++
-	l.perKey[fingerprint]++
-	return true
+	return netip.PrefixFrom(ip, bits).Masked()
 }
 
-func (l *SessionLimits) release(fingerprint string) {
+func (l *SessionLimits) acquire(fp string, source netip.Prefix) string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	switch {
+	case l.global >= l.maxGlobal:
+		return fmt.Sprintf("Too many active sessions (global max %d).", l.maxGlobal)
+	case l.perKey[fp] >= l.maxPerKey:
+		return fmt.Sprintf("Too many active sessions (per-key max %d).", l.maxPerKey)
+	case source.IsValid() && l.maxPerSource > 0 && l.perSource[source] >= l.maxPerSource:
+		return fmt.Sprintf("Too many active sessions from this network (max %d).", l.maxPerSource)
+	}
+	l.global++
+	l.perKey[fp]++
+	if source.IsValid() {
+		l.perSource[source]++
+	}
+	return ""
+}
 
+func (l *SessionLimits) release(fp string, source netip.Prefix) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.global--
-	if l.perKey[fingerprint] > 0 {
-		l.perKey[fingerprint]--
-		if l.perKey[fingerprint] == 0 {
-			delete(l.perKey, fingerprint)
+	l.perKey[fp]--
+	if l.perKey[fp] == 0 {
+		delete(l.perKey, fp)
+	}
+	if source.IsValid() {
+		l.perSource[source]--
+		if l.perSource[source] == 0 {
+			delete(l.perSource, source)
 		}
 	}
 }
