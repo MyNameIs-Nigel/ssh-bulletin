@@ -45,17 +45,18 @@ var (
 )
 
 type moderationTarget struct {
-	threadID      int64
-	opening       bool
-	postRemoved   bool
-	threadRemoved bool
+	threadID    int64
+	opening     bool
+	postRemoved bool
+	postDeleted bool
+	authorID    int64
 }
 
 func findModerationTarget(ctx context.Context, tx *sql.Tx, postID int64) (moderationTarget, error) {
 	var p moderationTarget
 	err := tx.QueryRowContext(ctx, `SELECT p.thread_id, p.id = (SELECT MIN(id) FROM posts WHERE thread_id = p.thread_id),
-		p.removed, t.removed FROM posts p JOIN threads t ON t.id = p.thread_id WHERE p.id = ?`, postID).
-		Scan(&p.threadID, &p.opening, &p.postRemoved, &p.threadRemoved)
+		p.removed, p.deleted, p.author_id FROM posts p WHERE p.id = ?`, postID).
+		Scan(&p.threadID, &p.opening, &p.postRemoved, &p.postDeleted, &p.authorID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -73,7 +74,7 @@ func (st *Store) Report(ctx context.Context, actorID, postID int64, reason strin
 	if err != nil {
 		return err
 	}
-	if p.postRemoved || p.threadRemoved {
+	if p.postRemoved || p.postDeleted {
 		return ErrNotFound
 	}
 
@@ -123,7 +124,7 @@ func (st *Store) Moderate(ctx context.Context, actorID, postID int64, action Mod
 		return 0, err
 	}
 	if action != Dismissed {
-		if action != Removed && action != Restored {
+		if p.postDeleted || (action != Removed && action != Restored) {
 			return 0, ErrReviewChanged
 		}
 		remove := action == Removed
@@ -139,14 +140,11 @@ func (st *Store) Moderate(ctx context.Context, actorID, postID int64, action Mod
 				return 0, err
 			}
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE threads SET last_post_at = COALESCE(
-			(SELECT MAX(created_at) FROM posts WHERE thread_id = ? AND removed = 0), created_at)
-			WHERE id = ?`, p.threadID, p.threadID); err != nil {
+		if err := updateThreadActivity(ctx, tx, p.threadID); err != nil {
 			return 0, err
 		}
 	}
-	resolved, err := tx.ExecContext(ctx, `UPDATE moderation_log SET resolved = 1
-		WHERE post_id = ? AND action = 'reported' AND resolved = 0`, postID)
+	resolved, err := resolveReports(ctx, tx, postID)
 	if err != nil {
 		return 0, err
 	}
@@ -157,6 +155,55 @@ func (st *Store) Moderate(ctx context.Context, actorID, postID int64, action Mod
 		return 0, err
 	}
 	return p.threadID, tx.Commit()
+}
+
+// DeletePost clears an author's content while preserving its place in the thread.
+func (st *Store) DeletePost(ctx context.Context, actorID, postID int64) (int64, error) {
+	tx, err := st.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	p, err := findModerationTarget(ctx, tx, postID)
+	if err != nil {
+		return 0, err
+	}
+	if p.authorID != actorID {
+		return 0, ErrForbidden
+	}
+	if p.postRemoved || p.postDeleted {
+		return 0, ErrReviewChanged
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE posts SET deleted = 1, body = '', flair = '' WHERE id = ?`, postID); err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM kudos WHERE post_id = ?`, postID); err != nil {
+		return 0, err
+	}
+	if p.opening {
+		if _, err := tx.ExecContext(ctx, `UPDATE threads SET title = '< deleted >', pinned = 0 WHERE id = ?`, p.threadID); err != nil {
+			return 0, err
+		}
+	}
+	if err := updateThreadActivity(ctx, tx, p.threadID); err != nil {
+		return 0, err
+	}
+	if _, err := resolveReports(ctx, tx, postID); err != nil {
+		return 0, err
+	}
+	return p.threadID, tx.Commit()
+}
+
+func updateThreadActivity(ctx context.Context, tx *sql.Tx, threadID int64) error {
+	_, err := tx.ExecContext(ctx, `UPDATE threads SET last_post_at = COALESCE(
+		(SELECT MAX(created_at) FROM posts WHERE thread_id = ? AND removed = 0 AND deleted = 0), created_at)
+		WHERE id = ?`, threadID, threadID)
+	return err
+}
+
+func resolveReports(ctx context.Context, tx *sql.Tx, postID int64) (sql.Result, error) {
+	return tx.ExecContext(ctx, `UPDATE moderation_log SET resolved = 1
+		WHERE post_id = ? AND action = 'reported' AND resolved = 0`, postID)
 }
 
 // ModerationPage reads private content only after checking the actor's role
@@ -228,7 +275,9 @@ func (st *Store) SetPinned(ctx context.Context, actorID, threadID int64, pinned 
 		return 0, ErrForbidden
 	}
 	var boardID int64
-	err = tx.QueryRowContext(ctx, `SELECT board_id FROM threads WHERE id = ? AND removed = 0`, threadID).Scan(&boardID)
+	err = tx.QueryRowContext(ctx, `SELECT t.board_id FROM threads t JOIN posts opening
+		ON opening.id = (SELECT MIN(p.id) FROM posts p WHERE p.thread_id = t.id)
+		WHERE t.id = ? AND t.removed = 0 AND opening.deleted = 0`, threadID).Scan(&boardID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, ErrNotFound
 	}

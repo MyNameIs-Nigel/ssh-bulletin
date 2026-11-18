@@ -96,6 +96,8 @@ var migrations = []string{
 		CHECK (viewer_id <> friend_id),
 		PRIMARY KEY (viewer_id, friend_id)
 	) WITHOUT ROWID;`,
+	// v5: author deletions are permanent and distinct from staff removals.
+	`ALTER TABLE posts ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;`,
 }
 
 func (st *Store) migrate(ctx context.Context) error {

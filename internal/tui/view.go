@@ -183,15 +183,16 @@ func (m Model) hints() []kit.Hint {
 		}
 		return []kit.Hint{{"↑↓", "move"}, {"⏎", "open"}, {"u", "users"}, {"p", "edit"}, {"n", "new thread"}, {"/", "jump"}, {"?", "help"}}
 	case scrBoard:
-		if m.canModerate() {
-			return []kit.Hint{{"⏎", "read"}, {"v", "author"}, {"o", "options"}, {"↑↓", "move"}, {"n", "new thread"}, {"esc", "back"}, {"?", "help"}}
-		}
-		return []kit.Hint{{"↑↓", "move"}, {"⏎", "read"}, {"v", "author"}, {"n", "new thread"}, {"u", "directory"}, {"esc", "back"}}
+		return []kit.Hint{{"⏎", "read"}, {"o", "options"}, {"↑↓", "move"}, {"n", "new thread"}, {"esc", "back"}, {"?", "help"}}
 	case scrThread:
-		if m.canModerate() {
-			return []kit.Hint{{"r", "reply"}, {"v", "author"}, {"o", "options"}, {"↑↓", "posts"}, {"!", "report"}, {"x", "remove"}, {"?", "help"}}
+		hints := []kit.Hint{{"↑↓", "posts"}, {"o", "options"}}
+		if !m.curThread.Removed {
+			hints = append(hints, kit.Hint{"r", "reply"})
 		}
-		return []kit.Hint{{"↑↓", "posts"}, {"v", "author"}, {"r", "reply"}, {"f", "kudos"}, {"!", "report"}, {"?", "help"}}
+		if m.postCursor < len(m.posts) && m.posts[m.postCursor].Placeholder() == "" {
+			hints = append(hints, kit.Hint{"f", "kudos"}, kit.Hint{"!", "report"})
+		}
+		return append(hints, kit.Hint{"?", "help"})
 	case scrModeration:
 		return m.moderationHints()
 	case scrProfile:

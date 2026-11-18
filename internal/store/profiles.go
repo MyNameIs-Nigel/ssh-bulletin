@@ -78,10 +78,10 @@ type ProfilePost struct {
 // RecentProfilePosts lists the account's latest visible posts and replies.
 func (st *Store) RecentProfilePosts(ctx context.Context, id int64) ([]ProfilePost, error) {
 	rows, err := st.db.QueryContext(ctx, `
-		SELECT p.id, t.id, b.id, t.title, b.title, p.created_at,
+		SELECT p.id, t.id, b.id, CASE WHEN t.removed = 1 THEN '< removed >' ELSE t.title END, b.title, p.created_at,
 		  EXISTS (SELECT 1 FROM posts first WHERE first.thread_id = t.id AND first.id < p.id)
 		FROM posts p JOIN threads t ON t.id = p.thread_id JOIN boards b ON b.id = t.board_id
-		WHERE p.author_id = ? AND p.removed = 0 AND t.removed = 0
+		WHERE p.author_id = ? AND p.removed = 0 AND p.deleted = 0
 		ORDER BY p.created_at DESC, p.id DESC LIMIT 5`, id)
 	if err != nil {
 		return nil, err

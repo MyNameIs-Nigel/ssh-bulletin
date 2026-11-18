@@ -45,23 +45,14 @@ func (m *Model) updateThread(k tea.KeyPressMsg) tea.Cmd {
 		if len(m.posts) > 0 {
 			m.openCompose(composeReply)
 		}
-	case "v":
-		if m.postCursor < len(m.posts) {
-			return m.openUserProfile(m.posts[m.postCursor].AuthorID)
-		}
-	case "!", "shift+1", "x":
-		if m.postCursor < len(m.posts) && m.acct != nil {
-			p := m.posts[m.postCursor]
-			if k.String() != "x" {
-				m.startModerationForm(board.Reported, p.ID, m.curThread.Title, m.postCursor == 0)
-			} else if m.canModerate() {
-				m.startModerationForm(board.Removed, p.ID, m.curThread.Title, m.postCursor == 0)
-			}
+	case "!", "shift+1":
+		if m.postCursor < len(m.posts) && m.acct != nil && m.posts[m.postCursor].Placeholder() == "" {
+			m.startModerationForm(board.Reported, m.posts[m.postCursor].ID, m.curThread.Title, m.postCursor == 0)
 		}
 	case "o":
 		m.openOptions()
 	case "f", "+":
-		if m.postCursor < len(m.posts) && m.acct != nil {
+		if m.postCursor < len(m.posts) && m.acct != nil && m.posts[m.postCursor].Placeholder() == "" {
 			p := &m.posts[m.postCursor]
 			// Optimistic: flip locally now, the broker event reconciles.
 			p.KudosByViewer = !p.KudosByViewer
@@ -92,7 +83,11 @@ func (m Model) threadLines(iw int) (lines []string, starts []int) {
 			}
 		}
 	}
-	head := kit.Wrap(kit.Gradient(m.curThread.Title, lipgloss.NewStyle().Bold(true), stops, 0), iw)
+	title := kit.Gradient(m.curThread.Title, lipgloss.NewStyle().Bold(true), stops, 0)
+	if m.curThread.OpeningUnavailable {
+		title = m.placeholderStyle().Render(m.curThread.Title)
+	}
+	head := kit.Wrap(title, iw)
 	lines = append(lines, "")
 	lines = append(lines, strings.Split(head, "\n")...)
 	meta := kit.S(m.th.Muted).Render(fmt.Sprintf("%s · started %s", kit.Plural(m.curThread.ReplyCount, "reply", "replies"), kit.Ago(m.curThread.CreatedAt, m.now())))
@@ -124,25 +119,22 @@ func (m Model) postCard(p board.Post, idx, iw int, selected bool) []string {
 	}
 	name += postFlair(p.Flair, astops)
 	when := kit.S(m.th.Muted).Render(" · " + kit.Ago(p.CreatedAt, m.now()))
-	heart := kit.S(m.th.Faint).Render("♡")
-	if p.KudosByViewer {
-		heart = kit.S(m.th.Bad).Render("♥")
-	}
-	kudos := heart + kit.S(m.th.Muted).Render(fmt.Sprintf(" %d", p.Kudos))
-
 	bodyW := iw - postHeaderOffset
 	head := name + when
-	head = kit.Fit(head, bodyW-lipgloss.Width(kudos)) + kudos
+	if p.Placeholder() == "" {
+		heart := kit.S(m.th.Faint).Render("♡")
+		if p.KudosByViewer {
+			heart = kit.S(m.th.Bad).Render("♥")
+		}
+		kudos := heart + kit.S(m.th.Muted).Render(fmt.Sprintf(" %d", p.Kudos))
+		head = kit.Fit(head, bodyW-lipgloss.Width(kudos)) + kudos
+	}
 	ink := m.th.Subtle
 	if selected {
 		ink = m.th.Text
 	}
-	var body []string
-	for _, l := range strings.Split(kit.Wrap(p.Body, bodyW), "\n") {
-		body = append(body, kit.S(ink).Render(l))
-	}
-
-	right := append([]string{head}, body...)
+	body := m.renderPostBody(p, bodyW, kit.S(ink))
+	right := append([]string{head}, strings.Split(body, "\n")...)
 	n := max(len(right), len(sigil))
 	out := make([]string, n)
 	for i := range n {
@@ -161,6 +153,17 @@ func (m Model) postCard(p board.Post, idx, iw int, selected bool) []string {
 		out[i] = rail + " " + left + "  " + r
 	}
 	return out
+}
+
+func (m Model) placeholderStyle() lipgloss.Style {
+	return kit.S(m.th.Muted).Italic(true)
+}
+
+func (m Model) renderPostBody(p board.Post, width int, style lipgloss.Style) string {
+	if marker := p.Placeholder(); marker != "" {
+		return m.placeholderStyle().Render(marker)
+	}
+	return style.Render(kit.Wrap(p.Body, width))
 }
 
 // followCursor scrolls so the selected post's header is on screen.

@@ -161,15 +161,30 @@ func (s *Service) Reply(ctx context.Context, author Account, t Thread, body stri
 	case !bodyFits(body):
 		return 0, ErrTooLong
 	}
-	pid, err := s.st.Reply(ctx, t.ID, author.ID, body, s.now().Unix())
+	pid, title, err := s.st.Reply(ctx, t.ID, author.ID, body, s.now().Unix())
 	if errors.Is(err, store.ErrNotFound) {
 		return 0, ErrNotFound
 	}
 	if err != nil {
 		return 0, err
 	}
-	s.broker.Publish(Event{Kind: EventReply, AccountID: author.ID, BoardID: t.BoardID, ThreadID: t.ID, PostID: pid, Actor: author.Handle, Title: t.Title})
+	s.broker.Publish(Event{Kind: EventReply, AccountID: author.ID, BoardID: t.BoardID, ThreadID: t.ID, PostID: pid, Actor: author.Handle, Title: title})
 	return pid, nil
+}
+
+// DeletePost deletes an author's own post, leaving a placeholder for readers.
+func (s *Service) DeletePost(ctx context.Context, actorID, postID int64) error {
+	if actorID == 0 {
+		return ErrNoAccount
+	}
+	threadID, err := s.st.DeletePost(ctx, actorID, postID)
+	if errors.Is(err, store.ErrNotFound) {
+		return ErrNotFound
+	}
+	if err == nil {
+		s.broker.Publish(Event{Kind: EventModeration, ThreadID: threadID, PostID: postID})
+	}
+	return err
 }
 
 // ToggleKudos flips the viewer's kudos on a post.

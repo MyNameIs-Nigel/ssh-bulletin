@@ -18,7 +18,7 @@ func (m Model) threadItems() []kit.Item {
 		switch {
 		case t.Pinned:
 			badge = "PINNED"
-		case m.now().Unix()-t.CreatedAt < 6*3600:
+		case !t.OpeningUnavailable && m.now().Unix()-t.CreatedAt < 6*3600:
 			badge = "NEW"
 		}
 		author := t.AuthorHandle + m.friendFlair(t.AuthorID)
@@ -27,11 +27,12 @@ func (m Model) threadItems() []kit.Item {
 		}
 		author += postFlair(t.Flair, stops)
 		items[i] = kit.Item{
-			Title: t.Title,
-			Desc:  fmt.Sprintf("%s · %s", author, kit.Plural(t.ReplyCount, "reply", "replies")),
-			Meta:  kit.Ago(t.LastPostAt, m.now()),
-			Badge: badge,
-			Stops: stops,
+			Title:      t.Title,
+			MutedTitle: t.OpeningUnavailable,
+			Desc:       fmt.Sprintf("%s · %s", author, kit.Plural(t.ReplyCount, "reply", "replies")),
+			Meta:       kit.Ago(t.LastPostAt, m.now()),
+			Badge:      badge,
+			Stops:      stops,
 		}
 	}
 	return items
@@ -65,10 +66,6 @@ func (m *Model) updateBoard(k tea.KeyPressMsg) tea.Cmd {
 	case "enter", "right", "l":
 		if i := m.threadMenu.Selected(); i >= 0 {
 			return m.enterThread(m.threads[i], 0)
-		}
-	case "v":
-		if i := m.threadMenu.Selected(); i >= 0 {
-			return m.openUserProfile(m.threads[i].AuthorID)
 		}
 	case "n":
 		m.openCompose(composeThread)
@@ -154,7 +151,11 @@ func (m Model) threadPreview(r rect, stops []colorT) string {
 	t := m.threads[i]
 	astops := kit.PaletteNamed(t.AuthorPalette).Stops
 	var b strings.Builder
-	b.WriteString("\n" + kit.Wrap(kit.Gradient(t.Title, lipgloss.NewStyle().Bold(true), stops, 0), iw) + "\n")
+	title := kit.Gradient(t.Title, lipgloss.NewStyle().Bold(true), stops, 0)
+	if t.OpeningUnavailable {
+		title = m.placeholderStyle().Render(t.Title)
+	}
+	b.WriteString("\n" + kit.Wrap(title, iw) + "\n")
 	b.WriteString(kit.S(m.th.Muted).Render("started by ") + kit.GradientBold(t.AuthorHandle, astops) + m.friendFlair(t.AuthorID) +
 		staffFlair(t.AuthorRole, kit.At(astops, 0.7)) + postFlair(t.Flair, astops) +
 		kit.S(m.th.Muted).Render(" · "+kit.Ago(t.CreatedAt, m.now())))
@@ -163,7 +164,7 @@ func (m Model) threadPreview(r rect, stops []colorT) string {
 	}
 	b.WriteString("\n\n")
 	if posts, ok := m.previews[t.ID]; ok && len(posts) > 0 {
-		b.WriteString(kit.S(m.th.Subtle).Render(kit.Wrap(posts[0].Body, iw)))
+		b.WriteString(m.renderPostBody(posts[0], iw, kit.S(m.th.Subtle)))
 	} else {
 		b.WriteString(kit.Spinner(m.frame, stops))
 	}

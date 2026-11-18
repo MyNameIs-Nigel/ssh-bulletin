@@ -46,14 +46,15 @@ func modelFor(svc *board.Service, a board.Account, w, h int) Model {
 		Now: func() time.Time { return fixedNow }, NoSplash: true})
 }
 
-func TestOnlyStaffGetThreadOptions(t *testing.T) {
+func TestMembersGetThreadOptionsWithoutPin(t *testing.T) {
 	svc, _, member, _ := pinFixture(t)
 	m := drive(t, modelFor(svc, member, 100, 30), key("enter"), key("o"))
-	if m.screen != scrBoard || m.overlay != ovNone {
-		t.Fatalf("a member must not get an options menu: screen=%v overlay=%v", m.screen, m.overlay)
+	if m.screen != scrBoard || m.overlay != ovOptions {
+		t.Fatalf("member options: screen=%v overlay=%v", m.screen, m.overlay)
 	}
-	if strings.Contains(ansi.Strip(m.View().Content), "options") {
-		t.Fatal("a member should not see the options hint")
+	text := ansi.Strip(m.viewOptions())
+	if !strings.Contains(text, "View author profile") || strings.Contains(text, "Pin to top of board") {
+		t.Fatalf("member options:\n%s", text)
 	}
 }
 

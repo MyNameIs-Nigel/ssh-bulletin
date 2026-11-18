@@ -61,18 +61,20 @@ type Board struct {
 
 // Thread is a titled conversation inside a board.
 type Thread struct {
-	ID            int64
-	BoardID       int64
-	Title         string
-	AuthorID      int64
-	AuthorHandle  string
-	AuthorPalette string
-	AuthorRole    Role
-	Flair         string // flair on the opening post
-	CreatedAt     int64
-	LastPostAt    int64
-	ReplyCount    int64
-	Pinned        bool
+	ID                 int64
+	BoardID            int64
+	Title              string
+	AuthorID           int64
+	AuthorHandle       string
+	AuthorPalette      string
+	AuthorRole         Role
+	Flair              string // flair on the opening post
+	CreatedAt          int64
+	LastPostAt         int64
+	ReplyCount         int64
+	Pinned             bool
+	Removed            bool // staff removed the opening post and closed replies
+	OpeningUnavailable bool
 }
 
 // Post is one message in a thread.
@@ -89,6 +91,20 @@ type Post struct {
 	CreatedAt     int64
 	Kudos         int64
 	KudosByViewer bool
+	Removed       bool
+	Deleted       bool
+}
+
+// Placeholder describes a post whose original body is unavailable.
+func (p Post) Placeholder() string {
+	switch {
+	case p.Deleted:
+		return "< deleted >"
+	case p.Removed:
+		return "< removed >"
+	default:
+		return ""
+	}
 }
 
 // Stats are fleet-wide counters for the masthead.
@@ -138,8 +154,8 @@ func (st *Store) AccountByID(ctx context.Context, id int64) (Account, error) {
 }
 
 const accountSelect = `SELECT a.id, a.fingerprint, a.public_key, a.handle, a.palette, a.bio, a.flair, a.created_at, a.last_seen,
-	(SELECT COUNT(*) FROM posts p JOIN threads t ON t.id = p.thread_id
-		WHERE p.author_id = a.id AND p.removed = 0 AND t.removed = 0),
+	(SELECT COUNT(*) FROM posts p
+		WHERE p.author_id = a.id AND p.removed = 0 AND p.deleted = 0),
 	` + roleSQL + ` FROM accounts a`
 
 func (st *Store) scanAccount(row interface{ Scan(...any) error }) (Account, error) {
@@ -198,9 +214,9 @@ func uniqueErr(err error) error {
 func (st *Store) Boards(ctx context.Context) ([]Board, error) {
 	rows, err := st.db.QueryContext(ctx, `
 		SELECT b.id, b.slug, b.title, b.tagline, b.palette,
-		  (SELECT COUNT(*) FROM threads t WHERE t.board_id = b.id AND t.removed = 0),
-		  (SELECT COUNT(*) FROM posts p JOIN threads t ON t.id = p.thread_id WHERE t.board_id = b.id AND t.removed = 0 AND p.removed = 0),
-		  COALESCE((SELECT MAX(t.last_post_at) FROM threads t WHERE t.board_id = b.id AND t.removed = 0), 0)
+		  (SELECT COUNT(*) FROM threads t WHERE t.board_id = b.id),
+		  (SELECT COUNT(*) FROM posts p JOIN threads t ON t.id = p.thread_id WHERE t.board_id = b.id AND p.removed = 0 AND p.deleted = 0),
+		  COALESCE((SELECT MAX(t.last_post_at) FROM threads t WHERE t.board_id = b.id), 0)
 		FROM boards b ORDER BY b.sort, b.id`)
 	if err != nil {
 		return nil, err
@@ -217,21 +233,24 @@ func (st *Store) Boards(ctx context.Context) ([]Board, error) {
 	return out, rows.Err()
 }
 
-const threadSelect = `SELECT t.id, t.board_id, t.title, t.author_id, a.handle, a.palette, t.created_at, t.last_post_at,
-	(SELECT COUNT(*) - 1 FROM posts p WHERE p.thread_id = t.id AND p.removed = 0), t.pinned,
-	COALESCE((SELECT p.flair FROM posts p WHERE p.thread_id = t.id ORDER BY p.id LIMIT 1), ''), ` + roleSQL + `
-	FROM threads t JOIN accounts a ON a.id = t.author_id`
+const threadSelect = `SELECT t.id, t.board_id,
+	CASE WHEN t.removed = 1 THEN '< removed >' ELSE t.title END,
+	t.author_id, a.handle, a.palette, t.created_at, t.last_post_at,
+	(SELECT COUNT(*) FROM posts p WHERE p.thread_id = t.id AND p.id > opening.id AND p.removed = 0 AND p.deleted = 0),
+	t.pinned, CASE WHEN t.removed = 0 THEN opening.flair ELSE '' END, ` + roleSQL + `, t.removed, (t.removed = 1 OR opening.deleted = 1)
+	FROM threads t JOIN accounts a ON a.id = t.author_id
+	JOIN posts opening ON opening.id = (SELECT MIN(p.id) FROM posts p WHERE p.thread_id = t.id)`
 
 func scanThread(sc interface{ Scan(...any) error }) (Thread, error) {
 	var t Thread
 	err := sc.Scan(&t.ID, &t.BoardID, &t.Title, &t.AuthorID, &t.AuthorHandle, &t.AuthorPalette,
-		&t.CreatedAt, &t.LastPostAt, &t.ReplyCount, &t.Pinned, &t.Flair, &t.AuthorRole)
+		&t.CreatedAt, &t.LastPostAt, &t.ReplyCount, &t.Pinned, &t.Flair, &t.AuthorRole, &t.Removed, &t.OpeningUnavailable)
 	return t, err
 }
 
 // Threads lists a board's threads, pinned first then most recently active.
 func (st *Store) Threads(ctx context.Context, boardID int64) ([]Thread, error) {
-	rows, err := st.db.QueryContext(ctx, threadSelect+` WHERE t.board_id = ? AND t.removed = 0 ORDER BY t.pinned DESC, t.last_post_at DESC, t.id DESC`, boardID)
+	rows, err := st.db.QueryContext(ctx, threadSelect+` WHERE t.board_id = ? ORDER BY t.pinned DESC, t.last_post_at DESC, t.id DESC`, boardID)
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +268,7 @@ func (st *Store) Threads(ctx context.Context, boardID int64) ([]Thread, error) {
 
 // Thread loads one thread.
 func (st *Store) Thread(ctx context.Context, id int64) (Thread, error) {
-	t, err := scanThread(st.db.QueryRowContext(ctx, threadSelect+` WHERE t.id = ? AND t.removed = 0`, id))
+	t, err := scanThread(st.db.QueryRowContext(ctx, threadSelect+` WHERE t.id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Thread{}, ErrNotFound
 	}
@@ -259,11 +278,12 @@ func (st *Store) Thread(ctx context.Context, id int64) (Thread, error) {
 // Posts lists a thread's posts in order; viewer marks the viewer's kudos.
 func (st *Store) Posts(ctx context.Context, threadID, viewer int64) ([]Post, error) {
 	rows, err := st.db.QueryContext(ctx, `
-		SELECT p.id, p.thread_id, p.author_id, a.handle, a.palette, a.fingerprint, p.flair, p.body, p.created_at,
+		SELECT p.id, p.thread_id, p.author_id, a.handle, a.palette, a.fingerprint, CASE WHEN p.removed = 0 THEN p.flair ELSE '' END,
+		  CASE WHEN p.removed = 0 THEN p.body ELSE '' END, p.created_at, p.removed, p.deleted,
 		  (SELECT COUNT(*) FROM kudos k WHERE k.post_id = p.id),
 		  EXISTS(SELECT 1 FROM kudos k WHERE k.post_id = p.id AND k.account_id = ?), `+roleSQL+`
-		FROM posts p JOIN accounts a ON a.id = p.author_id JOIN threads t ON t.id = p.thread_id
-		WHERE p.thread_id = ? AND p.removed = 0 AND t.removed = 0 ORDER BY p.id`, viewer, threadID)
+		FROM posts p JOIN accounts a ON a.id = p.author_id
+		WHERE p.thread_id = ? ORDER BY p.id`, viewer, threadID)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +292,7 @@ func (st *Store) Posts(ctx context.Context, threadID, viewer int64) ([]Post, err
 	for rows.Next() {
 		var p Post
 		if err := rows.Scan(&p.ID, &p.ThreadID, &p.AuthorID, &p.AuthorHandle, &p.AuthorPalette, &p.AuthorKey, &p.Flair, &p.Body,
-			&p.CreatedAt, &p.Kudos, &p.KudosByViewer, &p.AuthorRole); err != nil {
+			&p.CreatedAt, &p.Removed, &p.Deleted, &p.Kudos, &p.KudosByViewer, &p.AuthorRole); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -310,29 +330,31 @@ func (st *Store) CreateThread(ctx context.Context, boardID, authorID int64, titl
 const insertPost = `INSERT INTO posts (thread_id, author_id, body, created_at, flair)
 	VALUES (?, ?, ?, ?, (SELECT flair FROM accounts WHERE id = ?))`
 
-// Reply appends a post to a thread and bumps its activity time.
-func (st *Store) Reply(ctx context.Context, threadID, authorID int64, body string, now int64) (int64, error) {
+// Reply appends a post, bumps the thread activity, and returns the ID and current thread title.
+func (st *Store) Reply(ctx context.Context, threadID, authorID int64, body string, now int64) (int64, string, error) {
 	tx, err := st.db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	defer func() { _ = tx.Rollback() }()
-	upd, err := tx.ExecContext(ctx, `UPDATE threads SET last_post_at = max(last_post_at, ?) WHERE id = ? AND removed = 0`, now, threadID)
-	if err != nil {
-		return 0, err
+	var title string
+	err = tx.QueryRowContext(ctx, `UPDATE threads SET last_post_at = max(last_post_at, ?)
+		WHERE id = ? AND removed = 0 RETURNING title`, now, threadID).Scan(&title)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, "", ErrNotFound
 	}
-	if n, _ := upd.RowsAffected(); n == 0 {
-		return 0, ErrNotFound
+	if err != nil {
+		return 0, "", err
 	}
 	if err := checkPostQuota(ctx, tx, authorID, now); err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	res, err := tx.ExecContext(ctx, insertPost, threadID, authorID, body, now, authorID)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	pid, _ := res.LastInsertId()
-	return pid, tx.Commit()
+	return pid, title, tx.Commit()
 }
 
 // ToggleKudos flips the viewer's kudos on a post and returns the new state.
@@ -343,8 +365,8 @@ func (st *Store) ToggleKudos(ctx context.Context, postID, accountID int64) (bool
 	}
 	defer tx.Rollback()
 	var exists bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM posts p JOIN threads t ON t.id = p.thread_id
-		WHERE p.id = ? AND p.removed = 0 AND t.removed = 0)`, postID).Scan(&exists); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM posts p
+		WHERE p.id = ? AND p.removed = 0 AND p.deleted = 0)`, postID).Scan(&exists); err != nil {
 		return false, err
 	}
 	if !exists {
@@ -367,8 +389,8 @@ func (st *Store) ToggleKudos(ctx context.Context, postID, accountID int64) (bool
 func (st *Store) Stats(ctx context.Context) (Stats, error) {
 	var s Stats
 	err := st.db.QueryRowContext(ctx,
-		`SELECT (SELECT COUNT(*) FROM accounts), (SELECT COUNT(*) FROM threads WHERE removed = 0),
-		 (SELECT COUNT(*) FROM posts p JOIN threads t ON t.id = p.thread_id WHERE p.removed = 0 AND t.removed = 0)`).
+		`SELECT (SELECT COUNT(*) FROM accounts), (SELECT COUNT(*) FROM threads),
+		 (SELECT COUNT(*) FROM posts WHERE removed = 0 AND deleted = 0)`).
 		Scan(&s.Accounts, &s.Threads, &s.Posts)
 	return s, err
 }

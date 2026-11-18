@@ -121,7 +121,7 @@ func TestModerationRolesAndVisibility(t *testing.T) {
 		t.Fatal(err)
 	}
 	posts, err = svc.Posts(ctx, tid, alice.ID)
-	if err != nil || len(posts) != 1 || posts[0].ID != opening.ID {
+	if err != nil || len(posts) != 2 || posts[0].ID != opening.ID || posts[1].Placeholder() != "< removed >" || posts[1].Body != "" {
 		t.Fatalf("public posts after removal: %+v %v", posts, err)
 	}
 	if _, err := svc.ToggleKudos(ctx, alice, reply); !errors.Is(err, ErrNotFound) {
@@ -130,18 +130,22 @@ func TestModerationRolesAndVisibility(t *testing.T) {
 	if err := svc.Moderate(ctx, mod.ID, opening.ID, Removed, "Opening post"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.Thread(ctx, tid); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("removed thread visible: %v", err)
+	if got, err := svc.Thread(ctx, tid); err != nil || !got.Removed || got.Title != "< removed >" || got.ReplyCount != 0 {
+		t.Fatalf("removed thread placeholder: %+v, %v", got, err)
+	}
+	posts, err = svc.Posts(ctx, tid, alice.ID)
+	if err != nil || len(posts) != 2 || posts[0].Placeholder() != "< removed >" || posts[0].Body != "" {
+		t.Fatalf("removed opening post placeholder: %+v, %v", posts, err)
 	}
 	if _, err := svc.Reply(ctx, alice, thread, "stale reply"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("reply to removed thread: %v", err)
 	}
 	list, err := svc.Threads(ctx, thread.BoardID)
-	if err != nil || len(list) != 0 {
-		t.Fatalf("board listing leaks removed thread: %+v %v", list, err)
+	if err != nil || len(list) != 1 || list[0].Title != "< removed >" {
+		t.Fatalf("board listing should show the placeholder: %+v %v", list, err)
 	}
 	stats, err := svc.Stats(ctx)
-	if err != nil || stats.Threads != 0 || stats.Posts != 0 {
+	if err != nil || stats.Threads != 1 || stats.Posts != 0 {
 		t.Fatalf("visible totals: %+v %v", stats, err)
 	}
 	removed, err := svc.ModerationPage(ctx, mod.ID, RemovedView, 0)
@@ -152,8 +156,8 @@ func TestModerationRolesAndVisibility(t *testing.T) {
 		t.Fatal(err)
 	}
 	posts, err = svc.Posts(ctx, tid, alice.ID)
-	if err != nil || len(posts) != 1 || posts[0].ID != opening.ID {
-		t.Fatalf("restore must keep previously removed replies hidden: %+v %v", posts, err)
+	if err != nil || len(posts) != 2 || posts[0].Body != "opening" || posts[1].Placeholder() != "< removed >" || posts[1].Body != "" {
+		t.Fatalf("restore must keep previously removed replies as placeholders: %+v %v", posts, err)
 	}
 	history, err := svc.ModerationPage(ctx, mod.ID, HistoryView, 0)
 	if err != nil || len(history) != 6 || history[0].Action != Restored || history[0].Actor != owner.Handle {

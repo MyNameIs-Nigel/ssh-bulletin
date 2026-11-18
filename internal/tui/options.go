@@ -10,19 +10,27 @@ import (
 	"github.com/mynameis-nigel/ssh-bulletin/internal/tui/kit"
 )
 
-// optionsState is the staff-only "thread options" menu. It acts on a
-// snapshot of the thread taken when it opened, so the entries cannot drift
-// onto a different thread if the list reorders underneath it.
+// optionsState keeps actions attached to the thread or post selected at open.
 type optionsState struct {
-	thread board.Thread
-	menu   kit.Menu
-	busy   bool
+	thread     board.Thread
+	post       board.Post
+	opening    bool
+	menu       kit.Menu
+	actions    []func(*Model) tea.Cmd
+	confirming bool
+	busy       bool
 }
 
 type pinResultMsg struct {
 	title  string
 	pinned bool
 	err    error
+}
+
+type deleteResultMsg struct {
+	threadID int64
+	postID   int64
+	err      error
 }
 
 // optionsTarget is the thread the options menu would act on right now.
@@ -33,33 +41,64 @@ func (m Model) optionsTarget() (board.Thread, bool) {
 			return m.threads[i], true
 		}
 	case scrThread:
-		if m.curThread.ID != 0 {
+		if m.postCursor < len(m.posts) {
 			return m.curThread, true
 		}
 	}
 	return board.Thread{}, false
 }
 
-// openOptions shows what staff can do to the highlighted or open thread.
 func (m *Model) openOptions() {
 	t, ok := m.optionsTarget()
-	if !ok || !m.canModerate() {
+	if !ok {
 		return
 	}
 	m.opts = optionsState{thread: t, menu: kit.NewMenu(nil)}
 	m.opts.menu.Rows = 1
-	m.opts.menu.SetItems(m.optionItems())
+	if m.screen == scrThread {
+		m.opts.post = m.posts[m.postCursor]
+		m.opts.opening = m.postCursor == 0
+	}
+	stops := kit.PaletteNamed(m.curBoard.Palette).Stops
+	var items []kit.Item
+	add := func(label, meta string, run func(*Model) tea.Cmd) {
+		items = append(items, kit.Item{Title: label, Meta: meta, Stops: stops})
+		m.opts.actions = append(m.opts.actions, run)
+	}
+	if m.canModerate() && !t.OpeningUnavailable {
+		if t.Pinned {
+			add("Unpin from board", "returns it to activity order", (*Model).togglePin)
+		} else {
+			add("Pin to top of board", "keeps it above newer threads", (*Model).togglePin)
+		}
+	}
+	p := m.opts.post
+	authorID := t.AuthorID
+	if p.ID != 0 {
+		authorID = p.AuthorID
+	}
+	add("View author profile", "", func(m *Model) tea.Cmd {
+		m.closeOverlay()
+		return m.openUserProfile(authorID)
+	})
+	if p.ID != 0 && p.Placeholder() == "" {
+		kind := postKind(m.opts.opening)
+		if m.viewerID() == p.AuthorID {
+			add("Delete "+kind, "", func(m *Model) tea.Cmd {
+				m.opts.confirming = true
+				return nil
+			})
+		}
+		if m.canModerate() {
+			add("Remove "+kind, "", func(m *Model) tea.Cmd {
+				m.startModerationForm(board.Removed, p.ID, t.Title, m.opts.opening)
+				return nil
+			})
+		}
+	}
+	m.opts.menu.SetItems(items)
 	m.compose.lastShown = ovOptions
 	m.openOverlay(ovOptions)
-}
-
-func (m Model) optionItems() []kit.Item {
-	stops := kit.PaletteNamed(m.curBoard.Palette).Stops
-	label, desc := "Pin to top of board", "keeps it above newer threads"
-	if m.opts.thread.Pinned {
-		label, desc = "Unpin from board", "returns it to activity order"
-	}
-	return []kit.Item{{Title: label, Meta: desc, Stops: stops}}
 }
 
 func (m *Model) updateOptions(msg tea.Msg) tea.Cmd {
@@ -67,19 +106,51 @@ func (m *Model) updateOptions(msg tea.Msg) tea.Cmd {
 	if !ok || m.opts.busy {
 		return nil
 	}
+	if m.opts.confirming {
+		switch k.String() {
+		case "esc", "q", "o", "n":
+			m.opts.confirming = false
+		case "y":
+			return m.deletePost()
+		}
+		return nil
+	}
 	switch k.String() {
 	case "esc", "q", "o":
 		m.closeOverlay()
 	case "up", "k":
 		m.opts.menu.Move(-1)
+		m.opts.menu.Snap()
 	case "down", "j":
 		m.opts.menu.Move(1)
+		m.opts.menu.Snap()
 	case "enter":
-		if m.opts.menu.Selected() == 0 {
-			return m.togglePin()
+		if i := m.opts.menu.Selected(); i >= 0 {
+			return m.opts.actions[i](m)
 		}
 	}
 	return nil
+}
+
+func (m *Model) deletePost() tea.Cmd {
+	m.opts.busy = true
+	d, actor, post := m.d, m.viewerID(), m.opts.post
+	return func() tea.Msg {
+		return deleteResultMsg{threadID: post.ThreadID, postID: post.ID, err: d.Service.DeletePost(d.Context, actor, post.ID)}
+	}
+}
+
+func (m *Model) receiveDelete(msg deleteResultMsg) tea.Cmd {
+	m.opts.busy = false
+	if m.overlay == ovOptions {
+		m.closeOverlay()
+	}
+	if msg.err != nil {
+		m.setFlash(friendly(msg.err))
+		return nil
+	}
+	m.toasts.Push(m.now(), "Post deleted", "", m.myStops())
+	return m.onEvent(board.Event{Kind: board.EventModeration, ThreadID: msg.threadID, PostID: msg.postID})
 }
 
 // togglePin sends the opposite of the snapshot's state as an explicit target.
@@ -120,10 +191,20 @@ func (m Model) viewOptions() string {
 	acc := m.accent()
 	w := min(m.w-10, 56)
 	menu := m.opts.menu
+	title := "thread options"
+	if m.opts.post.ID != 0 {
+		title = postKind(m.opts.opening) + " options"
+	}
 	body := "\n" + kit.S(m.th.Muted).Render("thread  ") + kit.S(m.th.Text).Bold(true).Render(clip(m.opts.thread.Title, w-16)) + "\n" +
-		kit.Rule(w-4, "─", acc, 0) + "\n" + menu.Render(w-4, 1, m.th, true) + "\n" +
-		kit.Hints([]kit.Hint{{"⏎", "choose"}, {"esc", "close"}}, m.th, acc, w-4)
-	p := kit.Panel{Title: "⚙ thread options", Width: w, Height: lipgloss.Height(body) + 2, Stops: acc, Focused: true,
+		kit.Rule(w-4, "─", acc, 0) + "\n"
+	if m.opts.confirming {
+		body += kit.S(m.th.Text).Render("Permanently delete this "+postKind(m.opts.opening)+"?") + "\n" +
+			kit.Hints([]kit.Hint{{"y", "delete"}, {"esc", "cancel"}}, m.th, acc, w-4)
+	} else {
+		body += menu.Render(w-4, 2*len(menu.Items)-1, m.th, true) + "\n" +
+			kit.Hints([]kit.Hint{{"↑↓", "move"}, {"⏎", "choose"}, {"esc", "close"}}, m.th, acc, w-4)
+	}
+	p := kit.Panel{Title: "⚙ " + title, Width: w, Height: lipgloss.Height(body) + 2, Stops: acc, Focused: true,
 		Phase: m.panelPhase(), Fill: m.th.Overlay, Theme: m.th}
 	return p.Render(body)
 }

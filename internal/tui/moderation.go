@@ -424,7 +424,7 @@ func (m Model) viewModerationForm() string {
 	case board.Removed:
 		title = "Remove " + postKind(f.opening)
 		if f.opening {
-			title = "Remove entire thread"
+			title = "Remove opening post"
 		}
 	case board.Restored:
 		title = "Restore " + postKind(f.opening)
