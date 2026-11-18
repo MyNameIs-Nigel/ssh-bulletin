@@ -25,7 +25,7 @@ func TestEveryFrameIsExactlyTheTerminal(t *testing.T) {
 	svc, _ := testService(t)
 	acct, _, _ := svc.Lookup(context.Background(), "SHA256:demo-0")
 	for _, sz := range [][2]int{{64, 20}, {80, 24}, {100, 30}, {160, 50}, {40, 10}} {
-		for _, keys := range [][]string{nil, {"enter"}, {"enter", "enter"}, {"n"}, {"/"}, {"?"}, {"p"}} {
+		for _, keys := range [][]string{nil, {"enter"}, {"enter", "enter"}, {"n"}, {"/"}, {"?"}, {"p"}, {"enter", "tab"}, {"enter", "tab", "enter"}} {
 			m := New(Deps{Service: svc, Fingerprint: "SHA256:demo-0", Account: &acct, Width: sz[0], Height: sz[1],
 				Now: func() time.Time { return fixedNow }, NoSplash: true})
 			msgs := []tea.Msg{tea.WindowSizeMsg{Width: sz[0], Height: sz[1]}}

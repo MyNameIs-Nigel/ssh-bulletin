@@ -18,6 +18,15 @@ handle the first time you connect.
 - Press `f` on another player's profile to add or remove them as a friend. A blue `F` appears by their name for you.
 - Press `p` to edit your profile and choose a flair. New threads and replies use the flair you saved when you post them.
 
+## Live chat
+
+Every board has a live chat under its thread list.
+
+- Press `tab` on a board, or `↓` past the last thread, to focus the chat section, then `⏎` to join. The jump palette (`/`) also lists a chat for every board.
+- In the chat, everything you type goes to the message box. `⏎` sends, `↑↓` and `pgup`/`pgdn` scroll, and `ctrl+k` opens the jump palette.
+- The chat opens at the newest message and follows the conversation. If you scroll up to read history, new messages wait below with a count, and older history loads as you reach the top. `esc` jumps back to the latest, and a second `esc` leaves.
+- `tab` switches to picking a message. Then `o` gives you options: view the author's profile, delete your own message, or, for staff, remove someone else's.
+
 ## What's here
 
 | Path | What |

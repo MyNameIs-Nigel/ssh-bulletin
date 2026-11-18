@@ -233,6 +233,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pinResultMsg:
 		cmds = append(cmds, m.receivePin(msg))
 
+	case chatLoadedMsg:
+		cmds = append(cmds, m.receiveChat(msg))
+
+	case chatSentMsg:
+		cmds = append(cmds, m.receiveChatSent(msg))
+
+	case chatWithdrawnMsg:
+		cmds = append(cmds, m.receiveChatWithdrawn(msg))
+
 	case moderationPageMsg:
 		cmds = append(cmds, m.receiveModerationPage(msg))
 
@@ -324,6 +333,9 @@ func (m *Model) routeInput(msg tea.Msg) tea.Cmd {
 		return m.updateProfile(msg)
 	case scrDirectory:
 		return m.updateDirectory(msg)
+	case scrChat:
+		// The input has the keyboard: q, / and friends are text here.
+		return m.updateChat(msg)
 	}
 	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
@@ -446,8 +458,25 @@ func (m *Model) onEvent(ev board.Event) tea.Cmd {
 		if m.screen == scrBoard {
 			cmds = append(cmds, m.loadThreads(m.curBoard.ID))
 		}
+		if m.screen == scrBoard || m.screen == scrChat {
+			cmds = append(cmds, m.reloadChat())
+		}
 	case board.EventReview:
 		cmds = append(cmds, m.loadModeration())
+	case board.EventChat:
+		// Chat never toasts: it would bury every other notice. The board
+		// section and chat screen show it as it arrives.
+		if ev.BoardID == m.chat.boardID && (m.screen == scrBoard || m.screen == scrChat) {
+			cmds = append(cmds, m.refreshChat())
+		}
+	case board.EventChatRemoved:
+		if m.overlay == ovOptions && m.opts.chat.ID == ev.MessageID && !m.opts.busy {
+			m.closeOverlay()
+		}
+		if ev.BoardID == m.chat.boardID {
+			m.dropChat(ev.MessageID)
+			cmds = append(cmds, m.clampChat())
+		}
 	case board.EventModeration:
 		if m.overlay == ovOptions && m.opts.thread.ID == ev.ThreadID && !m.opts.busy {
 			m.closeOverlay()
@@ -469,6 +498,9 @@ func (m *Model) onEvent(ev board.Event) tea.Cmd {
 		}
 		if m.screen == scrBoard {
 			cmds = append(cmds, m.loadThreads(m.curBoard.ID))
+		}
+		if m.screen == scrBoard || m.screen == scrChat {
+			cmds = append(cmds, m.reloadChat())
 		}
 	}
 	if m.screen == scrUserProfile {
@@ -520,13 +552,14 @@ func (m *Model) goHome() {
 func (m *Model) enterBoard(b board.Board) tea.Cmd {
 	m.curBoard = b
 	m.screen = scrBoard
+	m.chatFocus = false
 	m.emptyAt = time.Time{}
 	m.threads = nil
 	m.threadMenu = kit.NewMenu(nil)
 	m.loading = true
 	m.setAccent(kit.PaletteNamed(b.Palette).Stops)
 	m.touchFocus()
-	return m.loadThreads(b.ID)
+	return tea.Batch(m.loadThreads(b.ID), m.resetChat(b.ID))
 }
 
 func (m *Model) enterThread(t board.Thread, focus int64) tea.Cmd {
@@ -556,7 +589,9 @@ func (m *Model) back() tea.Cmd {
 		m.screen = scrBoard
 		m.setAccent(kit.PaletteNamed(m.curBoard.Palette).Stops)
 		m.touchFocus()
-		return m.loadThreads(m.curBoard.ID)
+		return tea.Batch(m.loadThreads(m.curBoard.ID), m.refreshChat())
+	case scrChat:
+		return m.leaveChat()
 	case scrProfile:
 		return m.returnFromSocial(m.editFrom)
 	case scrBoard, scrModeration:
@@ -576,7 +611,7 @@ func friendly(err error) string {
 		board.ErrEmptyBody, board.ErrTooLong, board.ErrNoAccount, board.ErrNotFound,
 		board.ErrForbidden, board.ErrInvalidFingerprint, board.ErrKeyMismatch, board.ErrOwnerRole,
 		board.ErrReasonRequired, board.ErrAlreadyReported, board.ErrReviewChanged, board.ErrPostLimit,
-		board.ErrNewcomerLimit, board.ErrReportLimit, board.ErrPinLimit, board.ErrFlairInvalid, board.ErrSelfFriend} {
+		board.ErrNewcomerLimit, board.ErrReportLimit, board.ErrPinLimit, board.ErrFlairInvalid, board.ErrSelfFriend, board.ErrChatLimit} {
 		if errors.Is(err, known) {
 			return known.Error()
 		}

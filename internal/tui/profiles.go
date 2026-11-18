@@ -286,7 +286,10 @@ func (m *Model) returnFromSocial(to screen) tea.Cmd {
 		return m.loadPosts(m.curThread.ID, 0)
 	case scrBoard:
 		m.setAccent(kit.PaletteNamed(m.curBoard.Palette).Stops)
-		return m.loadThreads(m.curBoard.ID)
+		return tea.Batch(m.loadThreads(m.curBoard.ID), m.refreshChat())
+	case scrChat:
+		m.setAccent(kit.PaletteNamed(m.curBoard.Palette).Stops)
+		return tea.Batch(m.refreshChat(), m.clampChat())
 	case scrModeration:
 		if m.canModerate() {
 			m.setAccent(m.th.Brand.Stops)

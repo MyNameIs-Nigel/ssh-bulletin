@@ -88,6 +88,10 @@ func key(s string) tea.Msg {
 		return tea.KeyPressMsg{Code: tea.KeyTab}
 	case "right":
 		return tea.KeyPressMsg{Code: tea.KeyRight}
+	case "up":
+		return tea.KeyPressMsg{Code: tea.KeyUp}
+	case "pgup":
+		return tea.KeyPressMsg{Code: tea.KeyPgUp}
 	}
 	return tea.KeyPressMsg{Code: rune(s[0]), Text: s}
 }
@@ -113,6 +117,8 @@ func TestRenderGoldens(t *testing.T) {
 		{"home", &acct, []string{"enter"}},
 		{"home-down", &acct, []string{"enter", "down"}},
 		{"board", &acct, []string{"enter", "down", "enter"}},
+		{"board-chat", &acct, []string{"enter", "down", "enter", "tab"}},
+		{"chat", &acct, []string{"enter", "down", "enter", "tab", "enter"}},
 		{"thread", &acct, []string{"enter", "down", "enter", "enter"}},
 		{"compose", &acct, []string{"enter", "n"}},
 		{"palette", &acct, []string{"enter", "/"}},

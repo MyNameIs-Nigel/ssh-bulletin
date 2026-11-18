@@ -98,6 +98,22 @@ var migrations = []string{
 	) WITHOUT ROWID;`,
 	// v5: author deletions are permanent and distinct from staff removals.
 	`ALTER TABLE posts ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;`,
+	// v6: per-board live chat. Author deletions blank the body; staff
+	// removals keep it and record who removed it, as posts do.
+	`CREATE TABLE chat_messages (
+		id         INTEGER PRIMARY KEY,
+		board_id   INTEGER NOT NULL REFERENCES boards(id),
+		author_id  INTEGER NOT NULL REFERENCES accounts(id),
+		body       TEXT NOT NULL,
+		created_at INTEGER NOT NULL,
+		deleted    INTEGER NOT NULL DEFAULT 0,
+		removed    INTEGER NOT NULL DEFAULT 0,
+		removed_by INTEGER REFERENCES accounts(id),
+		removed_at INTEGER
+	);
+	CREATE INDEX chat_board_order ON chat_messages (board_id, id);
+	CREATE INDEX chat_author_time ON chat_messages (author_id, created_at);
+	CREATE INDEX chat_time ON chat_messages (created_at);`,
 }
 
 func (st *Store) migrate(ctx context.Context) error {

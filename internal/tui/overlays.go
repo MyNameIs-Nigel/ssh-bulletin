@@ -289,6 +289,11 @@ func (m *Model) openPalette() {
 		acts = append(acts, action{label: b.Title, desc: "board", stops: kit.PaletteNamed(b.Palette).Stops,
 			run: func(m *Model) tea.Cmd { return m.enterBoard(b) }})
 	}
+	for _, b := range m.boards {
+		b := b
+		acts = append(acts, action{label: b.Title + " chat", desc: "live chat", stops: kit.PaletteNamed(b.Palette).Stops,
+			run: func(m *Model) tea.Cmd { return m.openChatFor(b) }})
+	}
 	brand := m.th.Brand.Stops
 	if m.screen != scrProfile {
 		acts = append(acts,
@@ -408,9 +413,9 @@ func (m Model) viewHelp() string {
 		keys  []kit.Hint
 	}{
 		{"anywhere", []kit.Hint{{"/ ctrl+k", "jump palette"}, {"u", "user directory"}, {"p", "edit your profile"}, {"esc", "back"}, {"ctrl+c", "leave"}}},
-		{"lists", []kit.Hint{{"↑↓ j k", "move"}, {"⏎ → l", "open"}, {"g G", "top / bottom"}, {"n", "new thread"}, {"o", "thread options"}}},
+		{"lists", []kit.Hint{{"↑↓ j k", "move"}, {"⏎ → l", "open"}, {"g G", "top / bottom"}, {"n", "new thread"}, {"o", "thread options"}, {"tab", "board chat"}}},
 		{"threads", []kit.Hint{{"↑↓", "post by post"}, {"o", "post options"}, {"r ⏎", "reply"}, {"f +", "kudos"}, {"!", "report"}, {"pgup pgdn", "scroll"}}},
-		{"writing", []kit.Hint{{"ctrl+s", "post"}, {"tab", "title ↔ body"}, {"esc", "cancel"}}},
+		{"writing", []kit.Hint{{"ctrl+s", "post"}, {"tab", "title ↔ body"}, {"esc", "cancel"}, {"⏎", "send in chat"}, {"tab", "chat: pick message"}}},
 	}
 	if m.canModerate() {
 		groups[0].keys = append(groups[0].keys, kit.Hint{"m", "moderation"})
