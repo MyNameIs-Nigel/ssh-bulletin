@@ -286,6 +286,12 @@ func (m *Model) openPalette() {
 			run: func(m *Model) tea.Cmd { return m.enterBoard(b) }})
 	}
 	brand := m.th.Brand.Stops
+	if m.screen != scrProfile {
+		acts = append(acts,
+			action{"User directory", "usernames & friends", brand, (*Model).openDirectory},
+			action{"View your profile", "you", m.myStops(), func(m *Model) tea.Cmd { return m.openUserProfile(m.viewerID()) }},
+		)
+	}
 	acts = append(acts,
 		action{"Home", "go", brand, func(m *Model) tea.Cmd { m.goHome(); return nil }},
 		action{"New thread", "compose", brand, func(m *Model) tea.Cmd {
@@ -295,7 +301,7 @@ func (m *Model) openPalette() {
 			m.openCompose(composeThread)
 			return nil
 		}},
-		action{"Profile & palette", "you", m.myStops(), func(m *Model) tea.Cmd { m.openProfile(); return nil }},
+		action{"Edit profile", "palette, bio, flair", m.myStops(), func(m *Model) tea.Cmd { m.openProfile(); return nil }},
 		action{"Keyboard help", "help", brand, func(m *Model) tea.Cmd { m.openOverlay(ovHelp); return nil }},
 		action{"Quit", "leave", brand, func(*Model) tea.Cmd { return tea.Quit }},
 	)
@@ -393,9 +399,9 @@ func (m Model) viewHelp() string {
 		title string
 		keys  []kit.Hint
 	}{
-		{"anywhere", []kit.Hint{{"/ ctrl+k", "jump palette"}, {"p", "your profile"}, {"?", "this help"}, {"esc", "back"}, {"ctrl+c", "leave"}}},
+		{"anywhere", []kit.Hint{{"/ ctrl+k", "jump palette"}, {"u", "user directory"}, {"p", "edit your profile"}, {"esc", "back"}, {"ctrl+c", "leave"}}},
 		{"lists", []kit.Hint{{"↑↓ j k", "move"}, {"⏎ → l", "open"}, {"g G", "top / bottom"}, {"n", "new thread"}}},
-		{"threads", []kit.Hint{{"↑↓", "post by post"}, {"r ⏎", "reply"}, {"f +", "kudos"}, {"!", "report"}, {"pgup pgdn", "scroll"}}},
+		{"threads", []kit.Hint{{"↑↓", "post by post"}, {"v / click", "author profile"}, {"r ⏎", "reply"}, {"f +", "kudos"}, {"!", "report"}, {"pgup pgdn", "scroll"}}},
 		{"writing", []kit.Hint{{"ctrl+s", "post"}, {"tab", "title ↔ body"}, {"esc", "cancel"}}},
 	}
 	if m.canModerate() {

@@ -12,11 +12,12 @@ import (
 // Item is one menu entry. Each item may carry its own gradient, so a list of
 // boards reads as a list of distinct colored places.
 type Item struct {
-	Title string
-	Desc  string
-	Meta  string // right-aligned on the title row (counts, times)
-	Badge string // a small chip after the title ("NEW", "PINNED")
-	Stops []color.Color
+	Title    string
+	Desc     string
+	Meta     string      // right-aligned on the title row (counts, times)
+	Badge    string      // a small chip after the title ("NEW", "PINNED")
+	BadgeInk color.Color // optional chip color
+	Stops    []color.Color
 }
 
 // Menu is a vertically scrolling list with a spring-animated selection
@@ -166,7 +167,11 @@ func (m *Menu) Render(width, height int, th Theme, focused bool) string {
 		}
 		badge := ""
 		if it.Badge != "" {
-			badge = " " + Chip(it.Badge, At(stops, 0.8), true)
+			ink := it.BadgeInk
+			if ink == nil {
+				ink = At(stops, 0.8)
+			}
+			badge = " " + Chip(it.Badge, ink, true)
 		}
 		var title string
 		switch {

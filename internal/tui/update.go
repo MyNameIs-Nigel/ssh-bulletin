@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"image/color"
+	"maps"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -20,6 +21,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = max(msg.Width, 1), max(msg.Height, 1)
 		m.compose.resize(m.w, m.h)
+		m.syncMenus()
 		return m, nil
 
 	case kit.FrameMsg:
@@ -37,7 +39,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.d.IdleTimeout > 0 && m.now().Sub(m.lastInput) > m.d.IdleTimeout {
 			return m, tea.Sequence(tea.Printf("Disconnected after %s idle. Your posts are saved.", m.d.IdleTimeout), tea.Quit)
 		}
-		cmds = append(cmds, clockTick(), m.refreshRole(), m.loadModeration())
+		cmds = append(cmds, clockTick(), m.refreshRole(), m.loadModeration(), m.refreshFriends())
 
 	case eventsClosedMsg:
 		return m, nil
@@ -81,7 +83,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			keep = m.threads[i].ID
 		}
 		m.threads = msg.threads
-		m.threadMenu.SetItems(threadItems(m.threads, m.now()))
+		m.threadMenu.SetItems(m.threadItems())
 		for i, t := range m.threads {
 			if keep != 0 && t.ID == keep {
 				m.threadMenu.Select(i)
@@ -129,6 +131,60 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.postCursor = max(0, min(m.postCursor, len(m.posts)-1))
+		if msg.focus != 0 {
+			m.followCursor()
+		}
+
+	case directoryMsg:
+		if m.screen == scrDirectory && msg.request == m.socialRequest {
+			m.directory.loading = false
+			m.directory.entries, m.directory.more = msg.entries, msg.more
+			if msg.err != nil {
+				m.directory.err = "Couldn't load usernames. Try searching again."
+			}
+			m.syncDirectoryItems()
+		}
+
+	case userProfileMsg:
+		if m.screen == scrUserProfile && msg.request == m.socialRequest {
+			if msg.err != nil {
+				m.userProfile.err = friendly(msg.err)
+				break
+			}
+			if m.userProfile.data.Palette != msg.profile.Palette {
+				m.setAccent(kit.PaletteNamed(msg.profile.Palette).Stops)
+			}
+			m.userProfile.data = msg.profile
+			m.userProfile.recent = min(m.userProfile.recent, max(0, len(msg.profile.Recent)-1))
+		}
+
+	case friendsMsg:
+		if msg.request == m.friendsRequest && msg.err == nil && !maps.Equal(m.friends, msg.ids) {
+			m.friends = msg.ids
+			m.threadMenu.SetItems(m.threadItems())
+			m.syncDirectoryItems()
+			if m.screen == scrDirectory && m.directory.friendsOnly {
+				cmds = append(cmds, m.searchDirectory(false))
+			}
+		}
+
+	case friendSavedMsg:
+		m.userProfile.saving = false
+		if msg.err != nil {
+			m.userProfile.err = friendly(msg.err)
+			break
+		}
+		friends := make(map[int64]bool, len(m.friends)+1)
+		maps.Copy(friends, m.friends)
+		if msg.on {
+			friends[m.userProfile.id] = true
+		} else {
+			delete(friends, m.userProfile.id)
+		}
+		m.friends = friends
+		m.threadMenu.SetItems(m.threadItems())
+		m.syncDirectoryItems()
+		cmds = append(cmds, m.refreshFriends())
 
 	case registeredMsg:
 		m.form.busy = false
@@ -143,6 +199,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if first {
 			m.toasts.Push(m.now(), "Welcome, "+acct.Handle, "Your key is your account now.", kit.PaletteNamed(acct.Palette).Stops)
 			m.goHome()
+			cmds = append(cmds, m.refreshFriends())
 		} else {
 			m.toasts.Push(m.now(), "Profile saved", "", kit.PaletteNamed(acct.Palette).Stops)
 			m.setAccent(kit.PaletteNamed(acct.Palette).Stops)
@@ -158,7 +215,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.closeOverlay()
 		m.compose.reset()
 		if m.screen != scrThread {
-			cmds = append(cmds, m.enterThread(board.Thread{ID: msg.threadID, BoardID: m.curBoard.ID}))
+			cmds = append(cmds, m.enterThread(board.Thread{ID: msg.threadID, BoardID: m.curBoard.ID}, msg.postID))
 		} else {
 			cmds = append(cmds, m.loadPosts(msg.threadID, msg.postID))
 		}
@@ -237,6 +294,7 @@ func (m *Model) syncMenus() {
 	m.boardMenu.Scroll(list.h - 3)
 	list, _ = m.boardLayout()
 	m.threadMenu.Scroll(list.h - 3)
+	m.directory.menu.Scroll(m.socialRect().h - 2 - directoryHeaderRows)
 }
 
 // routeInput sends keys and pastes to the overlay or the current screen.
@@ -254,10 +312,15 @@ func (m *Model) routeInput(msg tea.Msg) tea.Cmd {
 		return m.updateOnboard(msg)
 	case scrProfile:
 		return m.updateProfile(msg)
+	case scrDirectory:
+		return m.updateDirectory(msg)
 	}
 	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return nil
+	}
+	if m.screen == scrUserProfile {
+		return m.updateUserProfile(key)
 	}
 	if m.screen == scrModeration && m.mod.detail != nil {
 		return m.updateModeration(key)
@@ -297,6 +360,11 @@ func (m *Model) globalKey(k tea.KeyPressMsg) (tea.Cmd, bool) {
 	case "p":
 		m.openProfile()
 		return nil, true
+	case "u":
+		if m.screen == scrModeration {
+			return nil, false // restore in the moderation queue
+		}
+		return m.openDirectory(), true
 	case "esc", "backspace", "left", "h":
 		if m.screen == scrHome {
 			return nil, false
@@ -390,6 +458,18 @@ func (m *Model) onEvent(ev board.Event) tea.Cmd {
 			cmds = append(cmds, m.loadThreads(m.curBoard.ID))
 		}
 	}
+	if m.screen == scrUserProfile {
+		switch ev.Kind {
+		case board.EventProfile, board.EventRole, board.EventThread, board.EventReply:
+			if ev.AccountID == m.userProfile.id {
+				cmds = append(cmds, m.loadUserProfile())
+			}
+		case board.EventModeration:
+			cmds = append(cmds, m.loadUserProfile())
+		}
+	} else if m.screen == scrDirectory && (ev.Kind == board.EventProfile || ev.Kind == board.EventRole) {
+		cmds = append(cmds, m.searchDirectory(false))
+	}
 	return tea.Batch(cmds...)
 }
 
@@ -436,21 +516,22 @@ func (m *Model) enterBoard(b board.Board) tea.Cmd {
 	return m.loadThreads(b.ID)
 }
 
-func (m *Model) enterThread(t board.Thread) tea.Cmd {
+func (m *Model) enterThread(t board.Thread, focus int64) tea.Cmd {
 	m.curThread = t
 	m.screen = scrThread
 	m.posts = nil
 	m.postCursor, m.postTop = 0, 0
 	m.loading = true
 	m.touchFocus()
-	return m.loadPosts(t.ID, 0)
+	return m.loadPosts(t.ID, focus)
 }
 
 func (m *Model) openProfile() {
-	if m.acct == nil {
+	if m.acct == nil || m.screen == scrProfile {
 		return
 	}
 	m.form = newIdentityForm(m.th, "", m.acct)
+	m.editFrom = m.screen
 	m.screen = scrProfile
 	m.setAccent(kit.PaletteNamed(m.acct.Palette).Stops)
 	m.touchFocus()
@@ -463,7 +544,9 @@ func (m *Model) back() tea.Cmd {
 		m.setAccent(kit.PaletteNamed(m.curBoard.Palette).Stops)
 		m.touchFocus()
 		return m.loadThreads(m.curBoard.ID)
-	case scrBoard, scrProfile, scrModeration:
+	case scrProfile:
+		return m.returnFromSocial(m.editFrom)
+	case scrBoard, scrModeration:
 		m.goHome()
 	}
 	return nil
@@ -480,7 +563,7 @@ func friendly(err error) string {
 		board.ErrEmptyBody, board.ErrTooLong, board.ErrNoAccount, board.ErrNotFound,
 		board.ErrForbidden, board.ErrInvalidFingerprint, board.ErrKeyMismatch, board.ErrOwnerRole,
 		board.ErrReasonRequired, board.ErrAlreadyReported, board.ErrReviewChanged, board.ErrPostLimit,
-		board.ErrNewcomerLimit, board.ErrReportLimit, board.ErrPinLimit} {
+		board.ErrNewcomerLimit, board.ErrReportLimit, board.ErrPinLimit, board.ErrFlairInvalid, board.ErrSelfFriend} {
 		if errors.Is(err, known) {
 			return known.Error()
 		}

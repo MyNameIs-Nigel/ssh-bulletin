@@ -5,6 +5,7 @@ package board
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -72,8 +73,8 @@ func (s *Service) Touch(ctx context.Context, id int64, publicKey string) error {
 	return s.st.Touch(ctx, id, publicKey, s.now().Unix())
 }
 
-// UpdateProfile changes handle, palette and bio.
-func (s *Service) UpdateProfile(ctx context.Context, a Account, handle, palette, bio string) (Account, error) {
+// UpdateProfile changes handle, palette, bio and the flair on future posts.
+func (s *Service) UpdateProfile(ctx context.Context, a Account, handle, palette, bio, flair string) (Account, error) {
 	handle = strings.TrimSpace(handle)
 	if !ValidHandle(handle) {
 		return a, ErrHandleInvalid
@@ -82,13 +83,16 @@ func (s *Service) UpdateProfile(ctx context.Context, a Account, handle, palette,
 	if utf8.RuneCountInString(bio) > MaxBioLen {
 		return a, ErrTooLong
 	}
-	if err := s.st.UpdateProfile(ctx, a.ID, handle, palette, bio); err != nil {
+	if !slices.Contains(PostFlairs(), flair) {
+		return a, ErrFlairInvalid
+	}
+	if err := s.st.UpdateProfile(ctx, a.ID, handle, palette, bio, flair); err != nil {
 		if errors.Is(err, store.ErrHandleTaken) {
 			return a, ErrHandleTaken
 		}
 		return a, err
 	}
-	s.broker.Publish(Event{Kind: EventProfile, Actor: handle})
+	s.broker.Publish(Event{Kind: EventProfile, AccountID: a.ID, Actor: handle})
 	return s.st.AccountByID(ctx, a.ID)
 }
 
@@ -141,7 +145,7 @@ func (s *Service) CreateThread(ctx context.Context, author Account, boardID int6
 	if err != nil {
 		return 0, err
 	}
-	s.broker.Publish(Event{Kind: EventThread, BoardID: boardID, ThreadID: tid, PostID: pid, Actor: author.Handle, Title: title})
+	s.broker.Publish(Event{Kind: EventThread, AccountID: author.ID, BoardID: boardID, ThreadID: tid, PostID: pid, Actor: author.Handle, Title: title})
 	return tid, nil
 }
 
@@ -164,7 +168,7 @@ func (s *Service) Reply(ctx context.Context, author Account, t Thread, body stri
 	if err != nil {
 		return 0, err
 	}
-	s.broker.Publish(Event{Kind: EventReply, BoardID: t.BoardID, ThreadID: t.ID, PostID: pid, Actor: author.Handle, Title: t.Title})
+	s.broker.Publish(Event{Kind: EventReply, AccountID: author.ID, BoardID: t.BoardID, ThreadID: t.ID, PostID: pid, Actor: author.Handle, Title: t.Title})
 	return pid, nil
 }
 

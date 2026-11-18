@@ -45,6 +45,8 @@ const (
 	scrThread
 	scrProfile
 	scrModeration
+	scrDirectory
+	scrUserProfile
 )
 
 type overlayKind int
@@ -102,7 +104,14 @@ type Model struct {
 	contentVersion int // invalidates reads started before a visibility change
 
 	// Identity form (onboarding and profile editing).
-	form identityForm
+	form     identityForm
+	editFrom screen
+
+	directory      directoryState
+	userProfile    userProfileState
+	friends        map[int64]bool
+	friendsRequest int
+	socialRequest  int
 
 	mod         moderationState
 	modForm     moderationForm
@@ -186,7 +195,7 @@ func (m Model) myStops() []color.Color {
 
 // Init starts the event listener, the clock, and the splash animation.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{waitEvent(m.d.Events), clockTick(), m.loadHome()}
+	cmds := []tea.Cmd{waitEvent(m.d.Events), clockTick(), m.loadHome(), m.loadFriends()}
 	if m.screen == scrSplash || m.screen == scrOnboard {
 		cmds = append(cmds, kit.Frame(m.gen))
 	}

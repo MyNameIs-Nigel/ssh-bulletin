@@ -87,6 +87,15 @@ var migrations = []string{
 	// v3: lobby tagline copy. Board taglines are stored data, so editing v1
 	// would not reach databases that already ran it.
 	`UPDATE boards SET tagline = 'Say hi. Introduce yourself.' WHERE slug = 'lobby';`,
+	// v4: profile flair preferences, post flair snapshots, and private friends.
+	`ALTER TABLE accounts ADD COLUMN flair TEXT NOT NULL DEFAULT '';
+	ALTER TABLE posts ADD COLUMN flair TEXT NOT NULL DEFAULT '';
+	CREATE TABLE friends (
+		viewer_id INTEGER NOT NULL REFERENCES accounts(id),
+		friend_id INTEGER NOT NULL REFERENCES accounts(id),
+		CHECK (viewer_id <> friend_id),
+		PRIMARY KEY (viewer_id, friend_id)
+	) WITHOUT ROWID;`,
 }
 
 func (st *Store) migrate(ctx context.Context) error {

@@ -3,35 +3,35 @@ package tui
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/mynameis-nigel/ssh-bulletin/internal/board"
 	"github.com/mynameis-nigel/ssh-bulletin/internal/tui/kit"
 )
 
-func threadItems(ts []board.Thread, now time.Time) []kit.Item {
-	items := make([]kit.Item, len(ts))
-	for i, t := range ts {
+func (m Model) threadItems() []kit.Item {
+	items := make([]kit.Item, len(m.threads))
+	for i, t := range m.threads {
+		stops := kit.PaletteNamed(t.AuthorPalette).Stops
 		badge := ""
 		switch {
 		case t.Pinned:
 			badge = "PINNED"
-		case now.Unix()-t.CreatedAt < 6*3600:
+		case m.now().Unix()-t.CreatedAt < 6*3600:
 			badge = "NEW"
 		}
-		author := t.AuthorHandle
+		author := t.AuthorHandle + m.friendFlair(t.AuthorID)
 		if t.AuthorRole.CanModerate() {
 			author += " [" + string(t.AuthorRole) + "]"
 		}
+		author += postFlair(t.Flair, stops)
 		items[i] = kit.Item{
 			Title: t.Title,
 			Desc:  fmt.Sprintf("%s · %s", author, kit.Plural(t.ReplyCount, "reply", "replies")),
-			Meta:  kit.Ago(t.LastPostAt, now),
+			Meta:  kit.Ago(t.LastPostAt, m.now()),
 			Badge: badge,
-			Stops: kit.PaletteNamed(t.AuthorPalette).Stops,
+			Stops: stops,
 		}
 	}
 	return items
@@ -64,7 +64,11 @@ func (m *Model) updateBoard(k tea.KeyPressMsg) tea.Cmd {
 		return m.wantPreview()
 	case "enter", "right", "l":
 		if i := m.threadMenu.Selected(); i >= 0 {
-			return m.enterThread(m.threads[i])
+			return m.enterThread(m.threads[i], 0)
+		}
+	case "v":
+		if i := m.threadMenu.Selected(); i >= 0 {
+			return m.openUserProfile(m.threads[i].AuthorID)
 		}
 	case "n":
 		m.openCompose(composeThread)
@@ -151,10 +155,11 @@ func (m Model) threadPreview(r rect, stops []colorT) string {
 	astops := kit.PaletteNamed(t.AuthorPalette).Stops
 	var b strings.Builder
 	b.WriteString("\n" + kit.Wrap(kit.Gradient(t.Title, lipgloss.NewStyle().Bold(true), stops, 0), iw) + "\n")
-	b.WriteString(kit.S(m.th.Muted).Render("started by ") + kit.GradientBold(t.AuthorHandle, astops) + staffFlair(t.AuthorRole, kit.At(astops, 0.7)) +
+	b.WriteString(kit.S(m.th.Muted).Render("started by ") + kit.GradientBold(t.AuthorHandle, astops) + m.friendFlair(t.AuthorID) +
+		staffFlair(t.AuthorRole, kit.At(astops, 0.7)) + postFlair(t.Flair, astops) +
 		kit.S(m.th.Muted).Render(" · "+kit.Ago(t.CreatedAt, m.now())))
 	if t.Pinned {
-		b.WriteString("  " + pinnedChip(m.th))
+		b.WriteString("\n" + pinnedChip(m.th))
 	}
 	b.WriteString("\n\n")
 	if posts, ok := m.previews[t.ID]; ok && len(posts) > 0 {

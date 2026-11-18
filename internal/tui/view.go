@@ -66,6 +66,10 @@ func (m Model) compose3() string {
 			bodyStr = m.viewModeration()
 		case scrProfile:
 			bodyStr = m.viewIdentity(true)
+		case scrDirectory:
+			bodyStr = m.viewDirectory()
+		case scrUserProfile:
+			bodyStr = m.viewUserProfile()
 		}
 		sc.Base = strings.Join([]string{m.masthead(), kit.Block(bodyStr, m.w, m.body().h), m.footer()}, "\n")
 	}
@@ -94,7 +98,11 @@ func (m Model) masthead() string {
 	case scrModeration:
 		crumbs = []string{"moderation"}
 	case scrProfile:
-		crumbs = []string{"you"}
+		crumbs = []string{"edit profile"}
+	case scrDirectory:
+		crumbs = []string{"directory"}
+	case scrUserProfile:
+		crumbs = []string{"profile"}
 	}
 	mid := kit.Crumbs(crumbs, m.th, acc)
 
@@ -171,23 +179,43 @@ func (m Model) hints() []kit.Hint {
 	switch m.screen {
 	case scrHome:
 		if m.canModerate() {
-			return []kit.Hint{{"↑↓", "move"}, {"⏎", "open"}, {"m", "moderation"}, {"/", "jump"}, {"?", "help"}}
+			return []kit.Hint{{"↑↓", "move"}, {"⏎", "open"}, {"u", "directory"}, {"m", "moderation"}, {"?", "help"}}
 		}
-		return []kit.Hint{{"↑↓", "move"}, {"⏎", "open"}, {"n", "new thread"}, {"/", "jump"}, {"p", "profile"}, {"?", "help"}, {"q", "quit"}}
+		return []kit.Hint{{"↑↓", "move"}, {"⏎", "open"}, {"u", "users"}, {"p", "edit"}, {"n", "new thread"}, {"/", "jump"}, {"?", "help"}}
 	case scrBoard:
 		if m.canModerate() {
-			return []kit.Hint{{"↑↓", "move"}, {"⏎", "read"}, {"o", "options"}, {"n", "new thread"}, {"esc", "back"}, {"?", "help"}}
+			return []kit.Hint{{"⏎", "read"}, {"v", "author"}, {"o", "options"}, {"↑↓", "move"}, {"n", "new thread"}, {"esc", "back"}, {"?", "help"}}
 		}
-		return []kit.Hint{{"↑↓", "move"}, {"⏎", "read"}, {"n", "new thread"}, {"esc", "back"}, {"/", "jump"}, {"?", "help"}}
+		return []kit.Hint{{"↑↓", "move"}, {"⏎", "read"}, {"v", "author"}, {"n", "new thread"}, {"u", "directory"}, {"esc", "back"}}
 	case scrThread:
 		if m.canModerate() {
-			return []kit.Hint{{"↑↓", "posts"}, {"r", "reply"}, {"o", "options"}, {"!", "report"}, {"x", "remove"}, {"?", "help"}}
+			return []kit.Hint{{"r", "reply"}, {"v", "author"}, {"o", "options"}, {"↑↓", "posts"}, {"!", "report"}, {"x", "remove"}, {"?", "help"}}
 		}
-		return []kit.Hint{{"↑↓", "posts"}, {"r", "reply"}, {"!", "report"}, {"f", "kudos"}, {"?", "help"}}
+		return []kit.Hint{{"↑↓", "posts"}, {"v", "author"}, {"r", "reply"}, {"f", "kudos"}, {"!", "report"}, {"?", "help"}}
 	case scrModeration:
 		return m.moderationHints()
 	case scrProfile:
-		return []kit.Hint{{"tab", "field"}, {"←→", "palette"}, {"ctrl+s", "save"}, {"esc", "back"}}
+		return []kit.Hint{{"tab", "field"}, {"←→", "choose"}, {"ctrl+s", "save"}, {"esc", "back"}}
+	case scrDirectory:
+		return []kit.Hint{{"↑↓", "select"}, {"⏎", "profile"}, {"esc", "back"}}
+	case scrUserProfile:
+		var hints []kit.Hint
+		if a := m.userProfile.data; a.ID != 0 {
+			switch {
+			case a.ID == m.viewerID():
+				hints = append(hints, kit.Hint{"e", "edit profile"})
+			case m.userProfile.saving:
+				hints = append(hints, kit.Hint{"f", "saving…"})
+			case m.friends[a.ID]:
+				hints = append(hints, kit.Hint{"f", "remove friend"})
+			default:
+				hints = append(hints, kit.Hint{"f", "add friend"})
+			}
+			if len(a.Recent) > 0 {
+				hints = append(hints, kit.Hint{"⏎", "read post"})
+			}
+		}
+		return append(hints, kit.Hint{"esc", "back"}, kit.Hint{"↑↓", "select"})
 	}
 	return nil
 }
