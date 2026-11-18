@@ -20,7 +20,7 @@ func (m Model) viewSplash() string {
 
 	logo := kit.Wordmark("BULLETIN", stops, phase)
 
-	tagline := "a message board for people with keys"
+	tagline := "a message board for devs, engineers, terminal dwellers, and everyone else"
 	typed := int(math.Min(float64(len(tagline)), math.Max(0, (t-0.35)*34)))
 	line := kit.Gradient(tagline[:typed], lipgloss.NewStyle().Italic(true), kit.Sample(stops, 3), 0)
 	if typed < len(tagline) && m.frame%8 < 5 {

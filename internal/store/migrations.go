@@ -59,6 +59,34 @@ var migrations = []string{
 		('workshop',  'The Workshop',   'Terminals, dotfiles, things you built',   'reef',   30),
 		('ideas',     'Idea Board',     'What should the arcade build next?',      'orchid', 40),
 		('offtopic',  'Off the Grid',   'Everything else.',                        'ember',  50);`,
+	// v2: roles, reports, audit log, and reversible removal.
+	`CREATE TABLE owner (
+		singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+		fingerprint TEXT NOT NULL
+	);
+	CREATE TABLE admins (
+		account_id INTEGER PRIMARY KEY REFERENCES accounts(id)
+	);
+	ALTER TABLE threads ADD COLUMN removed INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE posts ADD COLUMN removed INTEGER NOT NULL DEFAULT 0;
+	CREATE INDEX posts_author_time ON posts (author_id, created_at);
+	CREATE INDEX posts_time ON posts (created_at);
+	CREATE TABLE moderation_log (
+		id INTEGER PRIMARY KEY,
+		post_id INTEGER NOT NULL REFERENCES posts(id),
+		actor_id INTEGER NOT NULL REFERENCES accounts(id),
+		action TEXT NOT NULL CHECK (action IN ('reported', 'dismissed', 'removed', 'restored')),
+		reason TEXT NOT NULL,
+		created_at INTEGER NOT NULL,
+		resolved INTEGER NOT NULL DEFAULT 0
+	);
+	CREATE UNIQUE INDEX moderation_one_report ON moderation_log (post_id, actor_id) WHERE action = 'reported';
+	CREATE INDEX moderation_report_rate ON moderation_log (actor_id, created_at) WHERE action = 'reported';
+	CREATE INDEX moderation_pending ON moderation_log (post_id, id) WHERE action = 'reported' AND resolved = 0;
+	CREATE INDEX moderation_removals ON moderation_log (post_id, id) WHERE action = 'removed';`,
+	// v3: lobby tagline copy. Board taglines are stored data, so editing v1
+	// would not reach databases that already ran it.
+	`UPDATE boards SET tagline = 'Say hi. Introduce yourself.' WHERE slug = 'lobby';`,
 }
 
 func (st *Store) migrate(ctx context.Context) error {

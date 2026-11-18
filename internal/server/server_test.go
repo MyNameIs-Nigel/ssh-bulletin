@@ -65,7 +65,7 @@ func startServer(t *testing.T) fixture {
 	cfg := config.Config{
 		ListenHost: "127.0.0.1", ListenPort: port,
 		HostKeyPath: filepath.Join(dir, "host_key"), IdleTimeout: time.Minute,
-		MaxSessionsPerKey: 3, MaxConnections: 20,
+		MaxSessionsPerKey: 3, MaxSessionsPerSource: 1, MaxConnections: 20,
 		RateLimitPerSecond: 100, RateLimitBurst: 100, RateLimitMaxEntries: 100,
 		DBPath: filepath.Join(dir, "bulletin.db"), ProxyKeysPath: proxyPath,
 	}
@@ -279,4 +279,28 @@ func TestBannerCarriesVersion(t *testing.T) {
 	if got, want := string(client.ServerVersion()), "SSH-2.0-"+version.Version; got != want {
 		t.Fatalf("banner = %q, want %q", got, want)
 	}
+}
+
+func TestFirstSSHSessionOwnsBulletinAndDirectSourceCap(t *testing.T) {
+	f := startServer(t)
+	ctx := context.Background()
+	owner, visitor := signer(t), signer(t)
+	first := dial(t, f.addr, "first", owner, nil)
+	waitFor(t, "first terminal", func() bool { return first.output() != "" })
+
+	other := dial(t, f.addr, "second", visitor, nil)
+	waitFor(t, "direct source cap", func() bool {
+		return strings.Contains(other.output(), "Too many active sessions from this network")
+	})
+	proxied := dial(t, f.addr, identity.EncodeProxiedUsername(visitor.PublicKey(), "second"), f.proxy, visitor.PublicKey())
+	proxied.press("x", "\r", "\r")
+	waitFor(t, "proxied registration", func() bool {
+		a, err := f.st.AccountByFingerprint(ctx, identity.Fingerprint(visitor.PublicKey()))
+		return err == nil && a.Handle == "second" && a.Role == ""
+	})
+	first.press("x", "\r", "\r")
+	waitFor(t, "owner registration", func() bool {
+		a, err := f.st.AccountByFingerprint(ctx, identity.Fingerprint(owner.PublicKey()))
+		return err == nil && a.Role == store.RoleOwner
+	})
 }

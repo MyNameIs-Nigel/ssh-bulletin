@@ -78,7 +78,7 @@ func (m *Model) peekSelected() tea.Cmd {
 	if i < 0 || i >= len(m.boards) {
 		return nil
 	}
-	return loadThreads(m.d, m.boards[i].ID)
+	return m.loadThreads(m.boards[i].ID)
 }
 
 func (m Model) viewHome() string {
@@ -130,7 +130,8 @@ func (m Model) boardDetail(r rect) string {
 		if j >= max(1, (ih-10)/2) {
 			break
 		}
-		who := kit.GradientBold(t.AuthorHandle, kit.PaletteNamed(t.AuthorPalette).Stops)
+		authorStops := kit.PaletteNamed(t.AuthorPalette).Stops
+		who := kit.GradientBold(t.AuthorHandle, authorStops) + staffFlair(t.AuthorRole, kit.At(authorStops, 0.7))
 		b.WriteString(kit.S(kit.At(stops, float64(j)/5)).Render("▍") + kit.S(m.th.Text).Render(clip(t.Title, iw-4)) + "\n")
 		b.WriteString(kit.S(m.th.Faint).Render("▍") + who + kit.S(m.th.Muted).Render(fmt.Sprintf(" · %s · %s", kit.Plural(t.ReplyCount, "reply", "replies"), kit.Ago(t.LastPostAt, m.now()))) + "\n")
 	}
@@ -138,7 +139,7 @@ func (m Model) boardDetail(r rect) string {
 	// The community card sits at the bottom of the pane.
 	content := kit.Block(b.String(), iw, ih-4)
 	community := statLine(m.th, m.th.Brand.Stops,
-		[2]string{fmt.Sprint(m.stats.Accounts), plural(m.stats.Accounts, "key", "keys")},
+		[2]string{fmt.Sprint(m.stats.Accounts), plural(m.stats.Accounts, "user", "users")},
 		[2]string{fmt.Sprint(m.stats.Threads), plural(m.stats.Threads, "thread", "threads")},
 		[2]string{fmt.Sprint(m.stats.Posts), plural(m.stats.Posts, "post", "posts")})
 	content += "\n" + kit.FadeRule(iw, "┄", m.th.Line, m.th.BgBottom) + "\n" + kit.S(m.th.Muted).Render("across the bulletin") + "\n" + community

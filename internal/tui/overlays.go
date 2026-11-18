@@ -38,6 +38,8 @@ func (m *Model) updateOverlay(msg tea.Msg) tea.Cmd {
 		return m.updateCompose(msg)
 	case ovPalette:
 		return m.updatePalette(msg)
+	case ovModeration:
+		return m.updateModerationForm(msg)
 	case ovHelp:
 		if _, ok := msg.(tea.KeyPressMsg); ok {
 			m.closeOverlay()
@@ -55,6 +57,8 @@ func (m Model) drawOverlay(sc *kit.Scene) {
 		card = m.viewCompose()
 	case ovPalette:
 		card = m.viewPalette()
+	case ovModeration:
+		card = m.viewModerationForm()
 	case ovHelp:
 		card = m.viewHelp()
 	default:
@@ -149,6 +153,9 @@ func (m *Model) focusCompose() {
 
 func (m *Model) updateCompose(msg tea.Msg) tea.Cmd {
 	c := &m.compose
+	if c.busy {
+		return nil
+	}
 	if k, ok := msg.(tea.KeyPressMsg); ok {
 		switch k.String() {
 		case "esc":
@@ -288,6 +295,9 @@ func (m *Model) openPalette() {
 		action{"Keyboard help", "help", brand, func(m *Model) tea.Cmd { m.openOverlay(ovHelp); return nil }},
 		action{"Quit", "leave", brand, func(*Model) tea.Cmd { return tea.Quit }},
 	)
+	if m.canModerate() {
+		acts = append(acts, action{"Moderation", "staff", brand, (*Model).openModeration})
+	}
 	m.pal.actions = acts
 	m.pal.input.Reset()
 	m.pal.input.Focus()
@@ -378,8 +388,12 @@ func (m Model) viewHelp() string {
 	}{
 		{"anywhere", []kit.Hint{{"/ ctrl+k", "jump palette"}, {"p", "your profile"}, {"?", "this help"}, {"esc", "back"}, {"ctrl+c", "leave"}}},
 		{"lists", []kit.Hint{{"↑↓ j k", "move"}, {"⏎ → l", "open"}, {"g G", "top / bottom"}, {"n", "new thread"}}},
-		{"threads", []kit.Hint{{"↑↓", "post by post"}, {"r ⏎", "reply"}, {"f +", "kudos"}, {"pgup pgdn", "scroll"}}},
+		{"threads", []kit.Hint{{"↑↓", "post by post"}, {"r ⏎", "reply"}, {"f +", "kudos"}, {"!", "report"}, {"pgup pgdn", "scroll"}}},
 		{"writing", []kit.Hint{{"ctrl+s", "post"}, {"tab", "title ↔ body"}, {"esc", "cancel"}}},
+	}
+	if m.canModerate() {
+		groups[0].keys = append(groups[0].keys, kit.Hint{"m", "moderation"})
+		groups[2].keys = append(groups[2].keys, kit.Hint{"x", "remove post"})
 	}
 	col := func(gi int) string {
 		g := groups[gi]

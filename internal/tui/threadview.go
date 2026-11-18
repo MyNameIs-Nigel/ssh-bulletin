@@ -37,7 +37,18 @@ func (m *Model) updateThread(k tea.KeyPressMsg) tea.Cmd {
 	case "pgup", "ctrl+u":
 		m.postTop = max(0, m.postTop-m.threadRect().h/2)
 	case "r", "enter":
-		m.openCompose(composeReply)
+		if len(m.posts) > 0 {
+			m.openCompose(composeReply)
+		}
+	case "!", "shift+1", "x":
+		if m.postCursor < len(m.posts) && m.acct != nil {
+			p := m.posts[m.postCursor]
+			if k.String() != "x" {
+				m.startModerationForm(board.Reported, p.ID, m.curThread.Title, m.postCursor == 0)
+			} else if m.canModerate() {
+				m.startModerationForm(board.Removed, p.ID, m.curThread.Title, m.postCursor == 0)
+			}
+		}
 	case "f", "+":
 		if m.postCursor < len(m.posts) && m.acct != nil {
 			p := &m.posts[m.postCursor]
@@ -90,7 +101,7 @@ func (m Model) postCard(p board.Post, idx, iw int, selected bool) []string {
 	astops := kit.PaletteNamed(p.AuthorPalette).Stops
 	sigil := strings.Split(kit.Sigil(p.AuthorKey, astops, 1), "\n")
 
-	name := kit.GradientBold(p.AuthorHandle, astops)
+	name := kit.GradientBold(p.AuthorHandle, astops) + staffFlair(p.AuthorRole, kit.At(astops, 0.7))
 	if idx == 0 {
 		name += " " + kit.Chip("OP", kit.At(astops, 0.7), true)
 	}

@@ -16,11 +16,11 @@ handle the first time you connect.
 | Path | What |
 | --- | --- |
 | `internal/identity` | Router protocol v2: proxy-key trust, strict `<fp-hex64>.<slot>` parsing, guests refused fail-closed |
-| `internal/store` | SQLite (modernc, WAL): accounts, boards, threads, posts, kudos |
+| `internal/store` | SQLite (modernc, WAL): accounts, boards, posts, roles, moderation history |
 | `internal/board` | Service layer, input cleaning/limits, live-event broker |
-| `internal/server` | wish v2 server: middleware stack, per-key session caps, rate limit |
+| `internal/server` | wish v2 server: middleware stack, session caps by key and direct network, connection rate limit |
 | `internal/tui/kit` | **The TUI framework** — truecolor gradients, animated panels, spring menus, a layer compositor, toasts, pixel art |
-| `internal/tui` | The screens built on it: splash, onboarding, boards, threads, profile, compose, command palette |
+| `internal/tui` | The screens built on it: splash, onboarding, boards, threads, profile, compose, command palette, moderation |
 
 See [docs/README.md](docs/README.md) for the design notes and the arcade
 onboarding steps.
@@ -50,12 +50,19 @@ BULLETIN_RENDER_DIR=/tmp/renders go test ./internal/tui -run TestRenderGoldens
 | `BULLETIN_PROXY_KEYS_PATH` | — | authorized_keys file of trusted routers; unset = direct only |
 | `BULLETIN_IDLE_TIMEOUT` | `30m` | |
 | `BULLETIN_MAX_SESSIONS_PER_KEY` | `3` | |
+| `BULLETIN_MAX_SESSIONS_PER_SOURCE` | `6` | direct sessions per IPv4 address or IPv6 /64 |
+| `BULLETIN_OWNER_FINGERPRINT` | — | optional full SSH SHA-256 fingerprint for initial owner setup |
 | `BULLETIN_DEV_MODE` | `false` | seed demo content |
 | `BULLETIN_REQUIRE_REPLICATION` | — | entrypoint refuses to start without `LITESTREAM_REPLICA_URL` |
 | `BULLETIN_HOST_KEY_SOURCE` | — | read-only host mount the entrypoint seeds the host key from |
 
-## Not yet
+## Moderation
 
-Moderation and editing or deleting posts remain out of scope for the scaffold.
+Select a post and press `!` to report it. Staff can open Moderation with `m`
+to review reports, see decisions, and restore removed posts. The super admin
+can grant and revoke `A` by matching the player's handle and full SSH
+fingerprint. See the [moderation proposal and rollout notes](docs/03-moderation.md)
+for first-run and upgrade behavior.
+
 The release workflow can deploy Bulletin after the lobby, AWS, and GitHub
 setup in the [arcade onboarding guide](docs/01-arcade-onboarding.md).

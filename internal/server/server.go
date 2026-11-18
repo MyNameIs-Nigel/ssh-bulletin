@@ -53,7 +53,7 @@ func New(cfg config.Config, logger *slog.Logger, svc *board.Service, resolver *i
 			return nil, err
 		}
 	}
-	limits := NewSessionLimits(cfg.MaxConnections, cfg.MaxSessionsPerKey, resolver)
+	limits := NewSessionLimits(cfg.MaxConnections, cfg.MaxSessionsPerKey, cfg.MaxSessionsPerSource, resolver)
 	rl := ratelimiter.NewRateLimiter(rate.Limit(cfg.RateLimitPerSecond), cfg.RateLimitBurst, cfg.RateLimitMaxEntries)
 	srv := &Server{cfg: cfg, logger: logger, svc: svc, identity: resolver, version: version.Version}
 
@@ -106,7 +106,7 @@ func (srv *Server) attach() func(ssh.Handler) ssh.Handler {
 				return
 			}
 			ctx, cancel := context.WithTimeout(s.Context(), 5*time.Second)
-			acct, ok, err := srv.svc.Lookup(ctx, resolved.Fingerprint)
+			acct, ok, err := srv.svc.Connect(ctx, resolved.Fingerprint)
 			cancel()
 			if err != nil {
 				srv.logger.Error("account lookup failed", "error", err)
