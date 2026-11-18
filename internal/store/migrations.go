@@ -84,6 +84,9 @@ var migrations = []string{
 	CREATE INDEX moderation_report_rate ON moderation_log (actor_id, created_at) WHERE action = 'reported';
 	CREATE INDEX moderation_pending ON moderation_log (post_id, id) WHERE action = 'reported' AND resolved = 0;
 	CREATE INDEX moderation_removals ON moderation_log (post_id, id) WHERE action = 'removed';`,
+	// v3: lobby tagline copy. Board taglines are stored data, so editing v1
+	// would not reach databases that already ran it.
+	`UPDATE boards SET tagline = 'Say hi. Introduce yourself.' WHERE slug = 'lobby';`,
 }
 
 func (st *Store) migrate(ctx context.Context) error {
