@@ -55,6 +55,12 @@ func (s *Service) Register(ctx context.Context, fp, publicKey, handle, palette s
 		return Account{}, ErrHandleInvalid
 	}
 	a, err := s.st.CreateAccount(ctx, fp, publicKey, handle, palette, s.now().Unix())
+	if errors.Is(err, store.ErrAccountExists) || errors.Is(err, store.ErrHandleTaken) {
+		// Another session for this key may have finished onboarding first.
+		if existing, lookupErr := s.st.AccountByFingerprint(ctx, fp); lookupErr == nil {
+			return existing, nil
+		}
+	}
 	if errors.Is(err, store.ErrHandleTaken) {
 		return Account{}, ErrHandleTaken
 	}
@@ -168,6 +174,9 @@ func (s *Service) ToggleKudos(ctx context.Context, viewer Account, p Post) (bool
 		return false, ErrNoAccount
 	}
 	on, err := s.st.ToggleKudos(ctx, p.ID, viewer.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		return false, ErrNotFound
+	}
 	if err == nil {
 		s.broker.Publish(Event{Kind: EventKudos, ThreadID: p.ThreadID, PostID: p.ID, Actor: viewer.Handle})
 	}

@@ -22,9 +22,13 @@ func threadItems(ts []board.Thread, now time.Time) []kit.Item {
 		case now.Unix()-t.CreatedAt < 6*3600:
 			badge = "NEW"
 		}
+		author := t.AuthorHandle
+		if t.AuthorRole.CanModerate() {
+			author += " [" + string(t.AuthorRole) + "]"
+		}
 		items[i] = kit.Item{
 			Title: t.Title,
-			Desc:  fmt.Sprintf("%s · %s", t.AuthorHandle, kit.Plural(t.ReplyCount, "reply", "replies")),
+			Desc:  fmt.Sprintf("%s · %s", author, kit.Plural(t.ReplyCount, "reply", "replies")),
 			Meta:  kit.Ago(t.LastPostAt, now),
 			Badge: badge,
 			Stops: kit.PaletteNamed(t.AuthorPalette).Stops,
@@ -82,7 +86,7 @@ func (m *Model) wantPreview() tea.Cmd {
 	if _, ok := m.previews[id]; ok {
 		return nil
 	}
-	return loadPreview(m.d, id)
+	return m.loadPreview(id)
 }
 
 func (m Model) viewBoard() string {
@@ -145,7 +149,7 @@ func (m Model) threadPreview(r rect, stops []colorT) string {
 	astops := kit.PaletteNamed(t.AuthorPalette).Stops
 	var b strings.Builder
 	b.WriteString("\n" + kit.Wrap(kit.Gradient(t.Title, lipgloss.NewStyle().Bold(true), stops, 0), iw) + "\n")
-	b.WriteString(kit.S(m.th.Muted).Render("started by ") + kit.GradientBold(t.AuthorHandle, astops) +
+	b.WriteString(kit.S(m.th.Muted).Render("started by ") + kit.GradientBold(t.AuthorHandle, astops) + staffFlair(t.AuthorRole, kit.At(astops, 0.7)) +
 		kit.S(m.th.Muted).Render(" · "+kit.Ago(t.CreatedAt, m.now())) + "\n\n")
 	if posts, ok := m.previews[t.ID]; ok && len(posts) > 0 {
 		b.WriteString(kit.S(m.th.Subtle).Render(kit.Wrap(posts[0].Body, iw)))
