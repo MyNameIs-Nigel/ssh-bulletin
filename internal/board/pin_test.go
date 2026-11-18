@@ -93,6 +93,79 @@ func TestPinningIsStaffOnlyAndSortsFirst(t *testing.T) {
 	}
 }
 
+func TestPinLimitIsTwoPerBoard(t *testing.T) {
+	ctx := context.Background()
+	svc := newSvc(t)
+	if _, _, err := svc.Connect(ctx, identity.FingerprintFromBytes([32]byte{1})); err != nil {
+		t.Fatal(err)
+	}
+	owner := registerTestKey(t, svc, 1, "Owner")
+	boards, _ := svc.Boards(ctx)
+	var ids [4]int64
+	for i := range ids {
+		var err error
+		ids[i], err = svc.CreateThread(ctx, owner, boards[i%2].ID, "T"+string(rune('A'+i)), "body")
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// ids[0], ids[2] share boards[0]; ids[1], ids[3] share boards[1].
+	third, err := svc.CreateThread(ctx, owner, boards[0].ID, "TE", "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []int64{ids[0], ids[2]} {
+		if err := svc.SetPinned(ctx, owner.ID, id, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := svc.SetPinned(ctx, owner.ID, third, true); !errors.Is(err, ErrPinLimit) {
+		t.Fatalf("third pin on a board: %v", err)
+	}
+	if th, _ := svc.Thread(ctx, third); th.Pinned {
+		t.Fatal("a refused pin must not change the thread")
+	}
+	if err := svc.SetPinned(ctx, owner.ID, ids[0], true); err != nil {
+		t.Fatalf("re-pinning a pinned thread at the cap: %v", err)
+	}
+	// The cap is per board.
+	if err := svc.SetPinned(ctx, owner.ID, ids[1], true); err != nil {
+		t.Fatalf("another board's pin: %v", err)
+	}
+	// Unpinning frees a slot.
+	if err := svc.SetPinned(ctx, owner.ID, ids[2], false); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetPinned(ctx, owner.ID, third, true); err != nil {
+		t.Fatalf("pin after freeing a slot: %v", err)
+	}
+	// Removing a pinned thread releases its pin, so restoring it cannot
+	// bring a board back over the cap.
+	opening := firstPost(t, svc, ids[0])
+	if err := svc.Moderate(ctx, owner.ID, opening, Removed, "spam"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetPinned(ctx, owner.ID, ids[2], true); err != nil {
+		t.Fatalf("removed thread should not hold a slot: %v", err)
+	}
+	if err := svc.Moderate(ctx, owner.ID, opening, Restored, "ok"); err != nil {
+		t.Fatal(err)
+	}
+	if th, _ := svc.Thread(ctx, ids[0]); th.Pinned {
+		t.Fatal("a restored thread comes back unpinned")
+	}
+	ts, _ := svc.Threads(ctx, boards[0].ID)
+	pinned := 0
+	for _, th := range ts {
+		if th.Pinned {
+			pinned++
+		}
+	}
+	if pinned > MaxPinned {
+		t.Fatalf("board has %d pinned threads", pinned)
+	}
+}
+
 func firstPost(t *testing.T, svc *Service, thread int64) int64 {
 	t.Helper()
 	posts, err := svc.Posts(context.Background(), thread, 0)

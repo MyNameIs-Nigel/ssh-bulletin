@@ -142,3 +142,27 @@ func TestPinnedIndicatorsSurviveSmallTerminals(t *testing.T) {
 		}
 	}
 }
+
+func TestThirdPinIsRefusedWithAMessage(t *testing.T) {
+	ctx := context.Background()
+	svc, owner, _, b := pinFixture(t)
+	ts, err := svc.Threads(ctx, b.ID)
+	if err != nil || len(ts) < 3 {
+		t.Fatalf("threads: %d %v", len(ts), err)
+	}
+	for _, th := range ts[:2] {
+		if err := svc.SetPinned(ctx, owner.ID, th.ID, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := drive(t, modelFor(svc, owner, 100, 30), key("enter"), key("down"), key("down"), key("o"), key("enter"))
+	if m.overlay != ovNone {
+		t.Fatalf("the menu should close after a refusal, overlay=%v", m.overlay)
+	}
+	if !strings.Contains(m.flash, "already has 2 pinned") {
+		t.Fatalf("flash = %q", m.flash)
+	}
+	if got, _ := svc.Thread(ctx, ts[2].ID); got.Pinned {
+		t.Fatal("third thread must stay unpinned")
+	}
+}

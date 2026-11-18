@@ -30,6 +30,7 @@ const (
 	HistoryView = store.HistoryView
 	RemovedView = store.RemovedView
 
+	MaxPinned          = store.MaxPinned
 	MaxReasonLen       = 160
 	ModerationPageSize = 20
 )
@@ -45,6 +46,7 @@ var (
 	ErrPostLimit          = store.ErrPostLimit
 	ErrNewcomerLimit      = store.ErrNewcomerLimit
 	ErrReportLimit        = store.ErrReportLimit
+	ErrPinLimit           = store.ErrPinLimit
 )
 
 // ConfigureOwner applies the operator's optional initial key reservation.

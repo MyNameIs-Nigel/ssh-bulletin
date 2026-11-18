@@ -35,7 +35,11 @@ type ModerationEntry struct {
 	CreatedAt int64
 }
 
+// MaxPinned is how many threads one board can keep pinned at a time.
+const MaxPinned = 2
+
 var (
+	ErrPinLimit        = errors.New("that board already has 2 pinned threads. Unpin one first")
 	ErrAlreadyReported = errors.New("you already reported this post")
 	ErrReviewChanged   = errors.New("this post's moderation status changed. Refresh and try again")
 )
@@ -130,7 +134,8 @@ func (st *Store) Moderate(ctx context.Context, actorID, postID int64, action Mod
 			return 0, err
 		}
 		if p.opening {
-			if _, err := tx.ExecContext(ctx, `UPDATE threads SET removed = ? WHERE id = ?`, remove, p.threadID); err != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE threads SET removed = ?, pinned = CASE WHEN ? THEN 0 ELSE pinned END
+				WHERE id = ?`, remove, remove, p.threadID); err != nil {
 				return 0, err
 			}
 		}
@@ -229,6 +234,17 @@ func (st *Store) SetPinned(ctx context.Context, actorID, threadID int64, pinned 
 	}
 	if err != nil {
 		return 0, err
+	}
+	if pinned {
+		// Other threads only: pinning an already pinned thread stays harmless.
+		var others int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM threads
+			WHERE board_id = ? AND pinned = 1 AND removed = 0 AND id != ?`, boardID, threadID).Scan(&others); err != nil {
+			return 0, err
+		}
+		if others >= MaxPinned {
+			return 0, ErrPinLimit
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE threads SET pinned = ? WHERE id = ?`, pinned, threadID); err != nil {
 		return 0, err

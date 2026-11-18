@@ -480,7 +480,7 @@ func friendly(err error) string {
 		board.ErrEmptyBody, board.ErrTooLong, board.ErrNoAccount, board.ErrNotFound,
 		board.ErrForbidden, board.ErrInvalidFingerprint, board.ErrKeyMismatch, board.ErrOwnerRole,
 		board.ErrReasonRequired, board.ErrAlreadyReported, board.ErrReviewChanged, board.ErrPostLimit,
-		board.ErrNewcomerLimit, board.ErrReportLimit} {
+		board.ErrNewcomerLimit, board.ErrReportLimit, board.ErrPinLimit} {
 		if errors.Is(err, known) {
 			return known.Error()
 		}
