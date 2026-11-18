@@ -157,6 +157,9 @@ func staffFlair(role board.Role, ink color.Color) string {
 	return ""
 }
 
+// pinnedChip marks a sticky thread wherever its age is shown.
+func pinnedChip(th kit.Theme) string { return kit.Chip("PINNED", th.Warn, true) }
+
 func versionLabel(v string) string {
 	if v == "" || v == "dev" {
 		return "dev build"
@@ -172,10 +175,13 @@ func (m Model) hints() []kit.Hint {
 		}
 		return []kit.Hint{{"↑↓", "move"}, {"⏎", "open"}, {"n", "new thread"}, {"/", "jump"}, {"p", "profile"}, {"?", "help"}, {"q", "quit"}}
 	case scrBoard:
+		if m.canModerate() {
+			return []kit.Hint{{"↑↓", "move"}, {"⏎", "read"}, {"o", "options"}, {"n", "new thread"}, {"esc", "back"}, {"?", "help"}}
+		}
 		return []kit.Hint{{"↑↓", "move"}, {"⏎", "read"}, {"n", "new thread"}, {"esc", "back"}, {"/", "jump"}, {"?", "help"}}
 	case scrThread:
 		if m.canModerate() {
-			return []kit.Hint{{"↑↓", "posts"}, {"r", "reply"}, {"!", "report"}, {"x", "remove"}, {"?", "help"}}
+			return []kit.Hint{{"↑↓", "posts"}, {"r", "reply"}, {"o", "options"}, {"!", "report"}, {"x", "remove"}, {"?", "help"}}
 		}
 		return []kit.Hint{{"↑↓", "posts"}, {"r", "reply"}, {"!", "report"}, {"f", "kudos"}, {"?", "help"}}
 	case scrModeration:

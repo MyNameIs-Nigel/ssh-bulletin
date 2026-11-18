@@ -74,8 +74,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.loading = false
+		// The menu keeps its cursor by index, but a pin or new reply reorders
+		// the list: follow the thread the cursor was on.
+		var keep int64
+		if i := m.threadMenu.Selected(); i >= 0 && i < len(m.threads) {
+			keep = m.threads[i].ID
+		}
 		m.threads = msg.threads
 		m.threadMenu.SetItems(threadItems(m.threads, m.now()))
+		for i, t := range m.threads {
+			if keep != 0 && t.ID == keep {
+				m.threadMenu.Select(i)
+			}
+		}
 		cmds = append(cmds, m.wantPreview())
 		switch {
 		case len(m.threads) > 0:
@@ -158,6 +169,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.setFlash(friendly(msg.err))
 		}
+
+	case pinResultMsg:
+		cmds = append(cmds, m.receivePin(msg))
 
 	case moderationPageMsg:
 		cmds = append(cmds, m.receiveModerationPage(msg))

@@ -49,6 +49,8 @@ func (m *Model) updateThread(k tea.KeyPressMsg) tea.Cmd {
 				m.startModerationForm(board.Removed, p.ID, m.curThread.Title, m.postCursor == 0)
 			}
 		}
+	case "o":
+		m.openOptions()
 	case "f", "+":
 		if m.postCursor < len(m.posts) && m.acct != nil {
 			p := &m.posts[m.postCursor]
@@ -84,7 +86,13 @@ func (m Model) threadLines(iw int) (lines []string, starts []int) {
 	head := kit.Wrap(kit.Gradient(m.curThread.Title, lipgloss.NewStyle().Bold(true), stops, 0), iw)
 	lines = append(lines, "")
 	lines = append(lines, strings.Split(head, "\n")...)
-	lines = append(lines, kit.S(m.th.Muted).Render(fmt.Sprintf("%s · started %s", kit.Plural(m.curThread.ReplyCount, "reply", "replies"), kit.Ago(m.curThread.CreatedAt, m.now()))))
+	meta := kit.S(m.th.Muted).Render(fmt.Sprintf("%s · started %s", kit.Plural(m.curThread.ReplyCount, "reply", "replies"), kit.Ago(m.curThread.CreatedAt, m.now())))
+	if m.curThread.Pinned {
+		// Old threads stay on top because staff pinned them, not because
+		// they are current: say so where the age is shown.
+		meta = pinnedChip(m.th) + " " + kit.S(m.th.Muted).Render("stays on top") + kit.S(m.th.Faint).Render(" · ") + meta
+	}
+	lines = append(lines, meta)
 	lines = append(lines, kit.FadeRule(iw, "─", kit.At(stops, 0.5), m.th.BgBottom), "")
 
 	for i, p := range m.posts {

@@ -137,3 +137,16 @@ func moderationReason(reason string) (string, error) {
 		return reason, nil
 	}
 }
+
+// SetPinned pins a thread to the top of its board, or releases it. Only
+// admins and the owner may; the store enforces that.
+func (s *Service) SetPinned(ctx context.Context, actorID, threadID int64, pinned bool) error {
+	boardID, err := s.st.SetPinned(ctx, actorID, threadID, pinned)
+	if errors.Is(err, store.ErrNotFound) {
+		return ErrNotFound
+	}
+	if err == nil {
+		s.broker.Publish(Event{Kind: EventModeration, BoardID: boardID, ThreadID: threadID})
+	}
+	return err
+}

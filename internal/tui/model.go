@@ -55,6 +55,7 @@ const (
 	ovPalette
 	ovHelp
 	ovModeration
+	ovOptions
 )
 
 // Model is the root Bubble Tea model.
@@ -105,6 +106,7 @@ type Model struct {
 
 	mod         moderationState
 	modForm     moderationForm
+	opts        optionsState
 	modRequest  int
 	roleRequest int
 

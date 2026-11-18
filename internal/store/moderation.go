@@ -204,3 +204,34 @@ func (st *Store) ModerationPage(ctx context.Context, actorID int64, view Moderat
 	}
 	return entries, rows.Err()
 }
+
+// SetPinned sets a thread's sticky state. The actor's role is checked in the
+// same transaction as the update, and the target state is explicit rather
+// than a toggle, so a double press or two admins racing cannot undo each
+// other. It returns the thread's board for event routing.
+func (st *Store) SetPinned(ctx context.Context, actorID, threadID int64, pinned bool) (int64, error) {
+	tx, err := st.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	role, err := accountRole(ctx, tx, actorID)
+	if err != nil {
+		return 0, err
+	}
+	if !role.CanModerate() {
+		return 0, ErrForbidden
+	}
+	var boardID int64
+	err = tx.QueryRowContext(ctx, `SELECT board_id FROM threads WHERE id = ? AND removed = 0`, threadID).Scan(&boardID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE threads SET pinned = ? WHERE id = ?`, pinned, threadID); err != nil {
+		return 0, err
+	}
+	return boardID, tx.Commit()
+}

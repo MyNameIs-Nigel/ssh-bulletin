@@ -133,7 +133,11 @@ func (m Model) boardDetail(r rect) string {
 		authorStops := kit.PaletteNamed(t.AuthorPalette).Stops
 		who := kit.GradientBold(t.AuthorHandle, authorStops) + staffFlair(t.AuthorRole, kit.At(authorStops, 0.7))
 		b.WriteString(kit.S(kit.At(stops, float64(j)/5)).Render("▍") + kit.S(m.th.Text).Render(clip(t.Title, iw-4)) + "\n")
-		b.WriteString(kit.S(m.th.Faint).Render("▍") + who + kit.S(m.th.Muted).Render(fmt.Sprintf(" · %s · %s", kit.Plural(t.ReplyCount, "reply", "replies"), kit.Ago(t.LastPostAt, m.now()))) + "\n")
+		line := kit.S(m.th.Faint).Render("▍") + who + kit.S(m.th.Muted).Render(fmt.Sprintf(" · %s · %s", kit.Plural(t.ReplyCount, "reply", "replies"), kit.Ago(t.LastPostAt, m.now())))
+		if t.Pinned {
+			line += " " + pinnedChip(m.th)
+		}
+		b.WriteString(line + "\n")
 	}
 
 	// The community card sits at the bottom of the pane.

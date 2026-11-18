@@ -40,6 +40,8 @@ func (m *Model) updateOverlay(msg tea.Msg) tea.Cmd {
 		return m.updatePalette(msg)
 	case ovModeration:
 		return m.updateModerationForm(msg)
+	case ovOptions:
+		return m.updateOptions(msg)
 	case ovHelp:
 		if _, ok := msg.(tea.KeyPressMsg); ok {
 			m.closeOverlay()
@@ -59,6 +61,8 @@ func (m Model) drawOverlay(sc *kit.Scene) {
 		card = m.viewPalette()
 	case ovModeration:
 		card = m.viewModerationForm()
+	case ovOptions:
+		card = m.viewOptions()
 	case ovHelp:
 		card = m.viewHelp()
 	default:
@@ -297,6 +301,9 @@ func (m *Model) openPalette() {
 	)
 	if m.canModerate() {
 		acts = append(acts, action{"Moderation", "staff", brand, (*Model).openModeration})
+		if _, ok := m.optionsTarget(); ok {
+			acts = append(acts, action{"Thread options", "staff", brand, func(m *Model) tea.Cmd { m.openOptions(); return nil }})
+		}
 	}
 	m.pal.actions = acts
 	m.pal.input.Reset()
@@ -393,6 +400,7 @@ func (m Model) viewHelp() string {
 	}
 	if m.canModerate() {
 		groups[0].keys = append(groups[0].keys, kit.Hint{"m", "moderation"})
+		groups[1].keys = append(groups[1].keys, kit.Hint{"o", "thread options"})
 		groups[2].keys = append(groups[2].keys, kit.Hint{"x", "remove post"})
 	}
 	col := func(gi int) string {
