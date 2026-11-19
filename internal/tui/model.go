@@ -90,6 +90,9 @@ type Model struct {
 	emptyAt   time.Time // when the board in view became empty; zero if it is not
 	blinkGen  int       // identifies the live blink timer; stale ones are dropped
 
+	idleSplash bool
+	idleInhale bool
+
 	// Data.
 	stats          board.Stats
 	boards         []board.Board
@@ -218,7 +221,7 @@ func (m Model) myStops() []color.Color {
 
 // Init starts the event listener, the clock, and the splash animation.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{waitEvent(m.d.Events), clockTick(), m.loadHome(), m.loadFriends()}
+	cmds := []tea.Cmd{waitEvent(m.d.Events), m.clockTick(), m.loadHome(), m.loadFriends()}
 	if m.screen == scrSplash || m.screen == scrOnboard {
 		cmds = append(cmds, kit.Frame(m.gen))
 	}
@@ -227,12 +230,14 @@ func (m Model) Init() tea.Cmd {
 
 // animating reports whether anything on screen is still moving.
 func (m Model) animating() bool {
+	if m.idleSplash {
+		return false
+	}
 	now := m.now()
 	switch {
 	case m.screen == scrSplash:
 		// The splash is a waiting room: it moves until a key is pressed, so
-		// the birds and water never freeze and then jump. The idle timeout
-		// (clockTick) bounds how long an abandoned session can run it.
+		// the birds and water never freeze and then jump before the idle splash.
 		return true
 	case m.screen == scrOnboard && now.Sub(m.lastInput) < ambientFlow:
 		// Onboarding shimmers only for a while after the last keypress:
@@ -337,8 +342,13 @@ func waitEvent(ch <-chan board.Event) tea.Cmd {
 	}
 }
 
-func clockTick() tea.Cmd {
-	return tea.Tick(15*time.Second, func(time.Time) tea.Msg { return clockMsg{} })
+func (m Model) clockTick() tea.Cmd {
+	delay := 15 * time.Second
+	if !m.idleSplash {
+		// Aim the last check at the splash deadline between regular polls.
+		delay = min(delay, max(0, idleSplashAfter-m.now().Sub(m.lastInput)))
+	}
+	return tea.Tick(delay, func(time.Time) tea.Msg { return clockMsg{} })
 }
 
 func (m Model) loadHome() tea.Cmd {

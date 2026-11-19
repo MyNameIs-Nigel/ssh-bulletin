@@ -32,6 +32,9 @@ func (m Model) body() rect { return rect{0, 2, m.w, max(0, m.h-3)} }
 
 // View renders the frame.
 func (m Model) View() tea.View {
+	if m.idleSplash {
+		return m.viewIdleSplash()
+	}
 	if m.reuse && m.ui.valid && m.ui.stamp == m.stamp {
 		return m.ui.view
 	}
@@ -42,14 +45,19 @@ func (m Model) View() tea.View {
 	} else {
 		content = m.compose3()
 	}
-	v := tea.NewView(content)
-	v.AltScreen = true
 	// All motion, not just drags: hover needs to know where the pointer is.
 	// Motion that changes nothing reuses this frame (see Update).
-	v.MouseMode = tea.MouseModeAllMotion
+	v := m.terminalView(content, tea.MouseModeAllMotion)
+	m.ui.view, m.ui.stamp, m.ui.valid = v, m.stamp, true
+	return v
+}
+
+func (m Model) terminalView(content string, mouseMode tea.MouseMode) tea.View {
+	v := tea.NewView(content)
+	v.AltScreen = true
+	v.MouseMode = mouseMode
 	v.BackgroundColor = m.th.BgTop
 	v.WindowTitle = "bulletin · ssharcade"
-	m.ui.view, m.ui.stamp, m.ui.valid = v, m.stamp, true
 	return v
 }
 

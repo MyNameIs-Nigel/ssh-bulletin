@@ -43,6 +43,7 @@ type frameState struct {
 	view  tea.View // the last frame, for motion that changes nothing
 	stamp int      // the Model.stamp it was drawn for
 	valid bool
+	idle  idleSplashFrames
 
 	blocks map[string][]markup.Block // parsed bodies, by source text
 	spans  map[string][]markup.Span  // parsed single lines

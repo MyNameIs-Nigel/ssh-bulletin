@@ -76,11 +76,11 @@ standing in for `a`, gets an extra line of warning.
 From the warning, `c` copies the address with OSC 52 (`tea.SetClipboard`),
 which most terminals pass to the system clipboard. The address is also
 drawn as a real OSC 8 hyperlink, so ctrl- or cmd-click opens it in
-terminals that support links. This is the only place a real hyperlink is
-emitted. Links in posts are never real hyperlinks, because a terminal's own
-link handling would skip the warning.
+terminals that support links. Links in posts are never real hyperlinks,
+because a terminal's own link handling would skip the warning.
 
-The splash screen's art credit (`jgs`) is a link of this kind.
+The startup splash's art credit (`jgs`) opens the warning. The idle splash
+includes a terminal hyperlink labeled `asciiart.eu` to the cat's source.
 
 ## Keyboard
 
