@@ -1,0 +1,12 @@
+{
+  "cols": 110,
+  "rows": 36,
+  "steps": [
+    {
+      "expect": "press any key"
+    },
+    {
+      "wait_ms": 1500
+    }
+  ]
+}

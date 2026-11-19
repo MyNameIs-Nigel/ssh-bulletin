@@ -8,3 +8,5 @@
 | [04-rich-text-and-hover.md](04-rich-text-and-hover.md) | Formatting, links to users, boards and posts, the external-link warning, and how hover works (and what it costs) |
 
 Player-side editing and deletion of posts remain deferred.
+
+[Capture development SSH screens and test terminal behavior](../scripts/tui-tools/README.md)

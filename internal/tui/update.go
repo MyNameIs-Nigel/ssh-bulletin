@@ -16,6 +16,16 @@ import (
 // Update routes messages: global plumbing first, then the open overlay, then
 // the current screen.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.updateScreen(msg)
+	m = next.(Model)
+	probe := m.rtt.observe(m.overlay == ovHelp, msg, time.Now())
+	if probe != nil {
+		cmd = tea.Batch(cmd, probe)
+	}
+	return m, cmd
+}
+
+func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if mm, ok := msg.(tea.MouseMotionMsg); ok {
 		m.lastInput = m.now()
 		if !m.onMotion(mm) {
