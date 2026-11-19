@@ -18,7 +18,7 @@ import (
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	next, cmd := m.updateScreen(msg)
 	m = next.(Model)
-	probe := m.rtt.observe(m.overlay == ovHelp, msg, time.Now())
+	probe := m.rtt.observe(!m.idleSplash && m.overlay == ovHelp, msg, time.Now())
 	if probe != nil {
 		cmd = tea.Batch(cmd, probe)
 	}
@@ -26,9 +26,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if breath, ok := msg.(idleBreathMsg); ok {
+		if m.idleSplash && breath.gen == m.gen {
+			m.idleInhale = !m.idleInhale
+			return m, m.idleBreathTick()
+		}
+		return m, nil
+	}
 	if mm, ok := msg.(tea.MouseMotionMsg); ok {
 		m.lastInput = m.now()
-		if !m.onMotion(mm) {
+		if m.idleSplash || !m.onMotion(mm) {
 			// Nothing lit or unlit: the last frame still stands.
 			m.reuse = true
 			return m, m.ensureTicking()
@@ -56,10 +63,17 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case clockMsg:
-		if m.d.IdleTimeout > 0 && m.now().Sub(m.lastInput) > m.d.IdleTimeout {
+		idleFor := m.now().Sub(m.lastInput)
+		if m.d.IdleTimeout > 0 && idleFor > m.d.IdleTimeout {
 			return m, tea.Sequence(tea.Printf("Disconnected after %s idle. Your posts are saved.", m.d.IdleTimeout), tea.Quit)
 		}
-		cmds = append(cmds, clockTick(), m.refreshRole(), m.loadModeration(), m.refreshFriends())
+		if !m.idleSplash && idleFor >= idleSplashAfter {
+			m.idleSplash, m.idleInhale = true, false
+			m.gen++ // supersede the active screen's frame loop
+			m.ticking = false
+			cmds = append(cmds, m.idleBreathTick())
+		}
+		cmds = append(cmds, m.clockTick(), m.refreshRole(), m.loadModeration(), m.refreshFriends())
 
 	case eventsClosedMsg:
 		return m, nil
@@ -306,21 +320,36 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.PasteMsg:
 		m.lastInput = m.now()
-		cmds = append(cmds, m.routeInput(msg))
+		if !m.idleSplash {
+			cmds = append(cmds, m.routeInput(msg))
+		}
 
 	case tea.MouseWheelMsg:
 		m.lastInput = m.now()
-		m.hover = "" // the content moves under the pointer
-		cmds = append(cmds, m.onWheel(msg))
+		if !m.idleSplash {
+			m.hover = "" // the content moves under the pointer
+			cmds = append(cmds, m.onWheel(msg))
+		}
 
 	case tea.MouseClickMsg:
 		m.lastInput = m.now()
+		if m.idleSplash {
+			var cmd tea.Cmd
+			if msg.Button == tea.MouseLeft {
+				cmd = m.wakeIdleSplash()
+			}
+			return m, cmd
+		}
 		cmds = append(cmds, m.onClick(msg))
 
 	case tea.KeyPressMsg:
 		m.lastInput = m.now()
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
+		}
+		if m.idleSplash {
+			cmd := m.wakeIdleSplash()
+			return m, cmd
 		}
 		// The keyboard takes over: the pointer's highlight would only
 		// compete with the keyboard's until the mouse moves again.
