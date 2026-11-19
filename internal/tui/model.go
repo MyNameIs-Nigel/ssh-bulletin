@@ -64,6 +64,7 @@ const (
 
 // Model is the root Bubble Tea model.
 type Model struct {
+	rtt terminalRTT
 	d   Deps
 	th  kit.Theme
 	w   int

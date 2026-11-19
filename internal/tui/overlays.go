@@ -447,7 +447,7 @@ func (m Model) viewHelp() string {
 		code("@user  #board  #12") + kit.S(m.th.Subtle).Render(" thread ") + code("#12/3") + kit.S(m.th.Subtle).Render(" post ") +
 		code("[label](link)") + "\n" +
 		kit.S(m.th.Muted).Render("links outside the bulletin always show where they go first") + "\n"
-	body := "\n" + kit.SideBySide(4, col(0), col(1)) + "\n" + kit.SideBySide(4, col(2), col(3)) +
+	body := m.rtt.String() + "\n" + kit.SideBySide(4, col(0), col(1)) + "\n" + kit.SideBySide(4, col(2), col(3)) +
 		"\n" + format + "\n" + kit.S(m.th.Faint).Render("your key is your account · posts are public to every arcade player")
 	p := kit.Panel{Title: "? help", Width: lipgloss.Width(body) + 6, Height: lipgloss.Height(body) + 3, Stops: acc, Focused: true,
 		Phase: m.panelPhase(), Fill: m.th.Overlay, Theme: m.th, PadX: 2}
