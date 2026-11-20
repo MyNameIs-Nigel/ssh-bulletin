@@ -65,7 +65,7 @@ func (m Model) drawOverlay(sc *kit.Scene) {
 	case ovOptions:
 		card = m.viewOptions()
 	case ovLink:
-		card = m.viewLinkModal()
+		card = m.viewLinkModal(m.link, m.panelPhase())
 	case ovHelp:
 		card = m.viewHelp()
 	default:

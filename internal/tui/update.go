@@ -47,6 +47,9 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = max(msg.Width, 1), max(msg.Height, 1)
+		if m.w < minW || m.h < minH {
+			m.idleLink = linkModalState{}
+		}
 		m.compose.resize(m.w, m.h)
 		m.syncMenus()
 		return m, nil
@@ -387,10 +390,7 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseClickMsg:
 		m.lastInput = m.now()
 		if m.idleSplash {
-			var cmd tea.Cmd
-			if msg.Button == tea.MouseLeft {
-				cmd = m.wakeIdleSplash()
-			}
+			cmd := m.clickIdleSplash(msg)
 			return m, cmd
 		}
 		cmds = append(cmds, m.onClick(msg))
@@ -401,7 +401,7 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		if m.idleSplash {
-			cmd := m.wakeIdleSplash()
+			cmd := m.routeInput(msg)
 			return m, cmd
 		}
 		// The keyboard takes over: the pointer's highlight would only
@@ -431,6 +431,9 @@ func (m *Model) syncMenus() {
 
 // routeInput sends keys and pastes to the overlay or the current screen.
 func (m *Model) routeInput(msg tea.Msg) tea.Cmd {
+	if m.idleSplash {
+		return m.updateIdleSplash(msg)
+	}
 	if m.overlay != ovNone {
 		return m.updateOverlay(msg)
 	}

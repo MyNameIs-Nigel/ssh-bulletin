@@ -79,8 +79,8 @@ drawn as a real OSC 8 hyperlink, so ctrl- or cmd-click opens it in
 terminals that support links. Links in posts are never real hyperlinks,
 because a terminal's own link handling would skip the warning.
 
-The startup splash's art credit (`jgs`) opens the warning. The idle splash
-includes a terminal hyperlink labeled `asciiart.eu` to the cat's source.
+Click the artist's signature to open the warning on either splash screen.
+The startup bridge is signed `jgs`, and the sleeping cat is signed `fsc`.
 
 ## Keyboard
 

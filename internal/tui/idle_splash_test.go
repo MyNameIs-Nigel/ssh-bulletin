@@ -43,8 +43,8 @@ func TestIdleSplashPreservesDraftAndOnlyAnimatesTheCat(t *testing.T) {
 		t.Fatal("five minutes of inactivity should replace the ordinary animation loop")
 	}
 	still := m.View().Content
-	if !strings.Contains(still, catSource) || !strings.Contains(ansi.Strip(still), " <`-....__.'  fsc") {
-		t.Fatal("idle splash is missing the cat or the art source")
+	if strings.Contains(still, catSource) || !strings.Contains(ansi.Strip(still), " <`-....__.'  fsc") || !strings.Contains(ansi.Strip(still), "_   Zz") {
+		t.Fatal("idle splash should show the signed cat and keep the URL behind the warning")
 	}
 	if cmd := update(kit.FrameMsg{Gen: activeGen}); cmd != nil {
 		t.Fatal("the old animation loop scheduled another frame")
@@ -58,19 +58,42 @@ func TestIdleSplashPreservesDraftAndOnlyAnimatesTheCat(t *testing.T) {
 	if cmd := update(breath); cmd == nil {
 		t.Fatal("breathing should schedule the next pose")
 	}
-	inhale := strings.Split(m.View().Content, "\n")
+	inhaleFrame := m.View().Content
+	if !strings.Contains(ansi.Strip(inhaleFrame), "_   zZ") {
+		t.Fatal("the sleep cue should switch to zZ on the inhale")
+	}
+	inhale := strings.Split(inhaleFrame, "\n")
 	changed := 0
 	for i, line := range strings.Split(still, "\n") {
 		if line != inhale[i] {
 			changed++
 		}
 	}
-	if changed != 2 {
-		t.Fatalf("breathing changed %d rows, want only the two moving cat rows", changed)
+	if changed != 3 {
+		t.Fatalf("breathing changed %d rows, want only the cat and its sleep cue", changed)
 	}
 	update(breath)
 	if m.View().Content != still {
 		t.Fatal("exhale did not return to the original pose")
+	}
+	x, y, ok := m.ui.idle.hot.Find(idleCreditKey)
+	if !ok {
+		t.Fatal("cat signature is missing its click target")
+	}
+	update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+	if !m.idleSplash || m.idleLink.url != catSource || m.overlay != ovCompose {
+		t.Fatal("clicking the signature should open its warning over the idle splash and preserve the draft overlay")
+	}
+	if out := m.View().Content; !strings.Contains(out, catSource) || !strings.Contains(ansi.Strip(out), "external link") {
+		t.Fatal("the warning should show the cat source URL")
+	}
+	x, y, ok = m.ui.idle.hot.Find("modal:hint:c")
+	if !ok || update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft}) == nil || !m.idleLink.copied {
+		t.Fatal("clicking copy should copy the cat source URL")
+	}
+	update(key("esc"))
+	if !m.idleSplash || m.View().Content != still {
+		t.Fatal("escape should close the warning and return to the cat")
 	}
 
 	now = now.Add(idleBreathHold)
