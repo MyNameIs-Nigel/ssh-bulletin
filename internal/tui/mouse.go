@@ -6,12 +6,16 @@ import (
 
 // onWheel scrolls whatever list is under the pointer.
 func (m *Model) onWheel(msg tea.MouseWheelMsg) tea.Cmd {
-	if m.overlay != ovNone {
-		return nil
-	}
 	d := 1
 	if msg.Button == tea.MouseWheelUp {
 		d = -1
+	}
+	if m.overlay != ovNone {
+		if m.overlay == ovOptions && !m.opts.confirming && !m.opts.busy {
+			m.opts.menu.Move(d)
+			m.opts.menu.Snap()
+		}
+		return nil
 	}
 	switch m.screen {
 	case scrHome:

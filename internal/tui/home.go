@@ -132,13 +132,13 @@ func (m Model) boardDetail(r rect) string {
 		who := m.authorName("peek:"+strconv.FormatInt(t.ID, 10), t.AuthorID, t.AuthorHandle, authorStops) + m.friendFlair(t.AuthorID) +
 			staffFlair(t.AuthorRole, kit.At(authorStops, 0.7)) + postFlair(t.Flair, authorStops)
 		style := kit.S(m.th.Text)
-		if t.OpeningUnavailable {
+		if t.OpeningUnavailable || m.muted[t.AuthorID] {
 			style = m.placeholderStyle()
 		}
 		key := "peek:" + strconv.FormatInt(t.ID, 10)
-		title := style.Render(clip(t.Title, iw-4))
+		title := style.Render(clip(m.listingTitle(t), iw-4))
 		if m.lit(key) {
-			title = kit.Flow(clip(t.Title, iw-4), lipgloss.NewStyle(), stops, true, m.phase(), m.th)
+			title = kit.Flow(clip(m.listingTitle(t), iw-4), lipgloss.NewStyle(), stops, true, m.phase(), m.th)
 		}
 		t, bd := t, bd
 		title = m.hot(key, func(m *Model) tea.Cmd {
@@ -150,6 +150,9 @@ func (m Model) boardDetail(r rect) string {
 		line := kit.S(m.th.Faint).Render("▍") + who + kit.S(m.th.Muted).Render(fmt.Sprintf(" · %s · %s", kit.Plural(t.ReplyCount, "reply", "replies"), kit.Ago(t.LastPostAt, m.now())))
 		if t.Pinned {
 			line += " " + pinnedChip(m.th)
+		}
+		if t.Locked() {
+			line += " " + kit.Chip("LOCKED", m.th.Warn, true)
 		}
 		b.WriteString(line + "\n")
 	}

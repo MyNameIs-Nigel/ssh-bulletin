@@ -53,6 +53,7 @@ func (m *Model) openProfileOptions() {
 			})
 		}
 	}
+	add(m.muteAction(a.ID))
 	m.compose.lastShown = ovOptions
 	m.openOverlay(ovOptions)
 }
@@ -117,7 +118,7 @@ func (m *Model) openOptions() {
 		m.closeOverlay()
 		return m.openUserProfile(authorID)
 	})
-	if p.ID != 0 && p.Placeholder() == "" && !t.Removed && m.acct != nil {
+	if p.ID != 0 && p.Placeholder() == "" && !t.Removed && !t.Locked() && m.acct != nil {
 		ref := fmt.Sprintf("#%d/%d ", t.ID, m.postCursor+1)
 		add("Reply linking this post", strings.TrimSpace(ref), func(m *Model) tea.Cmd {
 			m.closeOverlay()
@@ -142,6 +143,20 @@ func (m *Model) openOptions() {
 				return nil
 			})
 		}
+	}
+	if m.acct != nil && authorID != m.viewerID() {
+		label, mute := m.muteAction(authorID)
+		add(label, "", mute)
+	}
+	if m.canModerate() && !t.Removed {
+		label := "Lock thread"
+		if t.Locked() {
+			label = "Unlock thread"
+		}
+		add(label, "", func(m *Model) tea.Cmd {
+			m.startThreadLockForm(t)
+			return nil
+		})
 	}
 	m.opts.menu.SetItems(items)
 	m.compose.lastShown = ovOptions
@@ -255,7 +270,7 @@ func (m Model) viewOptions() string {
 	w := min(m.w-10, 56)
 	menu := m.optionsMenu()
 	title := "thread options"
-	label, subject := "thread  ", m.opts.thread.Title
+	label, subject := "thread  ", m.listingTitle(m.opts.thread)
 	question, verb := "Permanently delete this "+postKind(m.opts.opening)+"?", "delete"
 	switch {
 	case m.opts.profile.ID != 0:
@@ -276,7 +291,7 @@ func (m Model) viewOptions() string {
 		body += kit.S(m.th.Text).Render(question) + "\n" +
 			m.hintBar([]kit.Hint{{"y", verb}, {"esc", "cancel"}}, acc, w-4, "options")
 	} else {
-		body += menu.Render(w-4, 2*len(menu.Items)-1, m.th, true) + "\n" +
+		body += menu.Render(w-4, max(1, min(2*len(menu.Items)-1, m.h-10)), m.th, true) + "\n" +
 			m.hintBar([]kit.Hint{{"↑↓", "move"}, {"⏎", "choose"}, {"esc", "close"}}, acc, w-4, "options")
 	}
 	p := kit.Panel{Title: "⚙ " + title, Width: w, Height: lipgloss.Height(body) + 2, Stops: acc, Focused: true,

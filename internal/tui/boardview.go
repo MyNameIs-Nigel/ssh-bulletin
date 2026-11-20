@@ -18,6 +18,8 @@ func (m Model) threadItems() []kit.Item {
 		switch {
 		case t.Pinned:
 			badge = "PINNED"
+		case t.Locked():
+			badge = "LOCKED"
 		case !t.OpeningUnavailable && m.now().Unix()-t.CreatedAt < 6*3600:
 			badge = "NEW"
 		}
@@ -26,10 +28,14 @@ func (m Model) threadItems() []kit.Item {
 			author += " [" + string(t.AuthorRole) + "]"
 		}
 		author += postFlair(t.Flair, stops)
+		desc := fmt.Sprintf("%s · %s", author, kit.Plural(t.ReplyCount, "reply", "replies"))
+		if t.Locked() && t.Pinned {
+			desc += " · locked"
+		}
 		items[i] = kit.Item{
-			Title:      t.Title,
-			MutedTitle: t.OpeningUnavailable,
-			Desc:       fmt.Sprintf("%s · %s", author, kit.Plural(t.ReplyCount, "reply", "replies")),
+			Title:      m.listingTitle(t),
+			MutedTitle: t.OpeningUnavailable || m.muted[t.AuthorID],
+			Desc:       desc,
 			Meta:       kit.Ago(t.LastPostAt, m.now()),
 			Badge:      badge,
 			Stops:      stops,
@@ -187,7 +193,7 @@ func (m Model) threadPreview(r rect, stops []colorT) string {
 	t := m.threads[i]
 	astops := kit.PaletteNamed(t.AuthorPalette).Stops
 	var b strings.Builder
-	title := kit.Gradient(t.Title, lipgloss.NewStyle().Bold(true), stops, 0)
+	title := kit.Gradient(m.listingTitle(t), lipgloss.NewStyle().Bold(true), stops, 0)
 	if t.OpeningUnavailable {
 		title = m.placeholderStyle().Render(t.Title)
 	}
@@ -197,6 +203,9 @@ func (m Model) threadPreview(r rect, stops []colorT) string {
 		kit.S(m.th.Muted).Render(" · "+kit.Ago(t.CreatedAt, m.now())))
 	if t.Pinned {
 		b.WriteString("\n" + pinnedChip(m.th))
+	}
+	if t.Locked() {
+		b.WriteString("\n" + kit.Chip("LOCKED", m.th.Warn, true) + " " + kit.S(m.th.Muted).Render(kit.Wrap(t.LockReason, max(1, iw-10))))
 	}
 	b.WriteString("\n\n")
 	if posts, ok := m.previews[t.ID]; ok && len(posts) > 0 {

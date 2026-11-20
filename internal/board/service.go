@@ -168,7 +168,7 @@ func (s *Service) Reply(ctx context.Context, author Account, t Thread, body stri
 	if err != nil {
 		return 0, err
 	}
-	s.broker.Publish(Event{Kind: EventReply, AccountID: author.ID, BoardID: t.BoardID, ThreadID: t.ID, PostID: pid, Actor: author.Handle, Title: title})
+	s.broker.Publish(Event{Kind: EventReply, AccountID: author.ID, BoardID: t.BoardID, ThreadID: t.ID, ThreadAuthorID: t.AuthorID, PostID: pid, Actor: author.Handle, Title: title})
 	return pid, nil
 }
 

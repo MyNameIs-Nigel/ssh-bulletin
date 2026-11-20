@@ -26,7 +26,7 @@ func (m Model) threadRect() rect {
 
 // selectedLinks are the live links in the selected post.
 func (m Model) selectedLinks() []board.Target {
-	if m.postCursor >= len(m.posts) || m.posts[m.postCursor].Placeholder() != "" {
+	if m.postCursor >= len(m.posts) || m.posts[m.postCursor].Placeholder() != "" || m.collapsedPost(m.posts[m.postCursor]) {
 		return nil
 	}
 	return m.bodyLinks(m.posts[m.postCursor].Body)
@@ -80,9 +80,16 @@ func (m *Model) updateThread(k tea.KeyPressMsg) tea.Cmd {
 		if len(m.posts) > 0 {
 			m.openCompose(composeReply)
 		}
+	case "z":
+		if m.postCursor < len(m.posts) {
+			p := m.posts[m.postCursor]
+			if p.Placeholder() == "" && m.muted[p.AuthorID] {
+				m.togglePostReveal(p.ID)
+			}
+		}
 	case "!", "shift+1":
 		if m.postCursor < len(m.posts) && m.acct != nil && m.posts[m.postCursor].Placeholder() == "" {
-			m.startModerationForm(board.Reported, m.posts[m.postCursor].ID, m.curThread.Title, m.postCursor == 0)
+			m.startModerationForm(board.Reported, m.posts[m.postCursor].ID, m.readingTitle(), m.postCursor == 0)
 		}
 	case "o":
 		m.openOptions()
@@ -118,7 +125,7 @@ func (m Model) threadLines(iw int) (lines []string, starts []int) {
 			}
 		}
 	}
-	title := kit.Gradient(m.curThread.Title, lipgloss.NewStyle().Bold(true), stops, 0)
+	title := kit.Gradient(m.readingTitle(), lipgloss.NewStyle().Bold(true), stops, 0)
 	if m.curThread.OpeningUnavailable {
 		title = m.placeholderStyle().Render(m.curThread.Title)
 	}
@@ -132,6 +139,10 @@ func (m Model) threadLines(iw int) (lines []string, starts []int) {
 		meta = pinnedChip(m.th) + " " + kit.S(m.th.Muted).Render("stays on top") + kit.S(m.th.Faint).Render(" · ") + meta
 	}
 	lines = append(lines, meta)
+	if m.curThread.Locked() {
+		lock := kit.Chip("LOCKED", m.th.Warn, true) + " " + kit.S(m.th.Muted).Render(m.curThread.LockReason)
+		lines = append(lines, strings.Split(kit.Wrap(lock, iw), "\n")...)
+	}
 	lines = append(lines, kit.FadeRule(iw, "─", kit.At(stops, 0.5), m.th.BgBottom), "")
 
 	for i, p := range m.posts {
@@ -199,7 +210,25 @@ func (m Model) renderPostBody(p board.Post, width int, style lipgloss.Style, sco
 	if marker := p.Placeholder(); marker != "" {
 		return m.placeholderStyle().Render(marker)
 	}
-	return strings.Join(m.richBody(p.Body, width, richOpts{ink: style, accent: m.boardStops(m.curThread.BoardID), scope: scope}), "\n")
+	var control string
+	if m.muted[p.AuthorID] {
+		if scope != postScope(p.ID) {
+			return m.placeholderStyle().Render("Muted post · open thread to reveal")
+		}
+		control = m.revealControl(p)
+		if m.collapsedPost(p) {
+			return control
+		}
+		control += "\n"
+	}
+	return control + strings.Join(m.richBody(p.Body, width, richOpts{ink: style, accent: m.boardStops(m.curThread.BoardID), scope: scope}), "\n")
+}
+
+func (m Model) readingTitle() string {
+	if len(m.posts) > 0 && m.revealedPosts[m.posts[0].ID] {
+		return m.curThread.Title
+	}
+	return m.listingTitle(m.curThread)
 }
 
 // boardStops is a board's gradient by id.

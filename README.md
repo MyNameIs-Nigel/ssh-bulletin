@@ -16,6 +16,7 @@ handle the first time you connect.
 - Press `u` from the boards to search usernames. `Tab` switches between the directory and your private friends list.
 - Press `v` on a selected post or reply, or click the author's name, to see their bio and recent activity. Open an activity entry to jump to that post.
 - Press `f` on another player's profile to add or remove them as a friend. A blue `F` appears by their name for you.
+- Use **Mute player** in a profile, post, or chat message's `o` menu to hide that player's chat and collapse their posts. Press `z` or click the collapsed post to reveal it. Unmute from a profile or post options.
 - Press `p` to edit your profile and choose a flair. New threads and replies use the flair you saved when you post them.
 
 ## Formatting and links
@@ -95,8 +96,8 @@ BULLETIN_RENDER_DIR=/tmp/renders go test ./internal/tui -run TestRenderGoldens
 Select a post and press `o` to see the actions available to you. Anyone can
 view the author's profile, authors can delete their own posts and replies, and
 staff can remove content or pin threads. Deleted and removed posts appear as
-placeholders in the conversation. Removing an opening post closes the thread
-to new replies until staff restore it.
+placeholders in the conversation. Staff can lock a thread from its options
+to pause replies. The thread stays readable and shows the lock reason.
 
 Press `!` to report a post. Chat messages and other players' profiles have
 a Report action in their `o` menu. Use **Contact staff** in the `/` jump menu

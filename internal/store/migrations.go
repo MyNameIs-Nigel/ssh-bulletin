@@ -144,6 +144,14 @@ var migrations = []string{
 		expires_at INTEGER NOT NULL
 	);
 	ALTER TABLE accounts ADD COLUMN handle_change_required INTEGER NOT NULL DEFAULT 0;`,
+	// v8: private player mutes and reversible discussion locks.
+	`CREATE TABLE mutes (
+		viewer_id INTEGER NOT NULL REFERENCES accounts(id),
+		muted_id INTEGER NOT NULL REFERENCES accounts(id),
+		CHECK (viewer_id <> muted_id),
+		PRIMARY KEY (viewer_id, muted_id)
+	) WITHOUT ROWID;
+	ALTER TABLE threads ADD COLUMN lock_reason TEXT NOT NULL DEFAULT '';`,
 }
 
 func (st *Store) migrate(ctx context.Context) error {

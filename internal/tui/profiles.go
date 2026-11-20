@@ -53,7 +53,9 @@ type userProfileMsg struct {
 type friendsMsg struct {
 	request int
 	ids     map[int64]bool
+	muted   map[int64]bool
 	err     error
+	muteErr error
 }
 
 type friendSavedMsg struct {
@@ -68,7 +70,8 @@ func (m Model) loadFriends() tea.Cmd {
 	}
 	return func() tea.Msg {
 		ids, err := d.Service.FriendIDs(d.Context, viewer)
-		return friendsMsg{request: request, ids: ids, err: err}
+		muted, muteErr := d.Service.MutedIDs(d.Context, viewer)
+		return friendsMsg{request: request, ids: ids, muted: muted, err: err, muteErr: muteErr}
 	}
 }
 

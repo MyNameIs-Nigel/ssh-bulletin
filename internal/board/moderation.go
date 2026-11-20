@@ -33,11 +33,14 @@ const (
 	TimedOut             = store.TimedOut
 	Suspended            = store.Suspended
 	RestrictionLifted    = store.RestrictionLifted
+	ThreadLocked         = store.ThreadLocked
+	ThreadUnlocked       = store.ThreadUnlocked
 
 	PostTarget    = store.PostTarget
 	ChatTarget    = store.ChatTarget
 	ProfileTarget = store.ProfileTarget
 	ContactTarget = store.ContactTarget
+	ThreadTarget  = store.ThreadTarget
 
 	QueueView   = store.QueueView
 	HistoryView = store.HistoryView
@@ -63,6 +66,7 @@ var (
 	ErrHandleChangeRequired = store.ErrHandleChangeRequired
 	ErrContactLimit         = store.ErrContactLimit
 	ErrRestrictionDuration  = errors.New("enter a duration between 1m and 8760h, such as 30m or 24h")
+	ErrThreadLocked         = store.ErrThreadLocked
 )
 
 // ConfigureOwner applies the operator's optional initial key reservation.
@@ -229,6 +233,21 @@ func moderationReason(reason string) (string, error) {
 // admins and the owner may; the store enforces that.
 func (s *Service) SetPinned(ctx context.Context, actorID, threadID int64, pinned bool) error {
 	boardID, err := s.st.SetPinned(ctx, actorID, threadID, pinned, s.now().Unix())
+	if errors.Is(err, store.ErrNotFound) {
+		return ErrNotFound
+	}
+	if err == nil {
+		s.broker.Publish(Event{Kind: EventModeration, BoardID: boardID, ThreadID: threadID})
+	}
+	return err
+}
+
+func (s *Service) SetThreadLock(ctx context.Context, actorID, threadID int64, locked bool, reason string) error {
+	reason, err := moderationReason(reason)
+	if err != nil {
+		return err
+	}
+	boardID, err := s.st.SetThreadLock(ctx, actorID, threadID, locked, reason, s.now().Unix())
 	if errors.Is(err, store.ErrNotFound) {
 		return ErrNotFound
 	}
