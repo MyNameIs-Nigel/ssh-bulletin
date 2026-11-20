@@ -20,6 +20,10 @@ handle the first time you connect.
 
 ## Formatting and links
 
+In the post composer, `esc` saves a draft for the current SSH session. Reopen
+the composer on the same board or thread to resume it. `ctrl+x` discards the
+draft after confirmation, and `ctrl+s` posts it.
+
 Posts and chat take light Markdown: `**bold**`, `*italic*`, `` `code` ``,
 `~~strike~~`, `- lists`, `1. lists`, `> quotes`, headings and fenced code.
 They also take links:
@@ -81,8 +85,8 @@ BULLETIN_RENDER_DIR=/tmp/renders go test ./internal/tui -run TestRenderGoldens
 | `BULLETIN_IDLE_TIMEOUT` | `30m` | |
 | `BULLETIN_MAX_SESSIONS_PER_KEY` | `3` | |
 | `BULLETIN_MAX_SESSIONS_PER_SOURCE` | `6` | direct sessions per IPv4 address or IPv6 /64 |
-| `BULLETIN_OWNER_FINGERPRINT` | — | optional full SSH SHA-256 fingerprint for initial owner setup |
-| `BULLETIN_DEV_MODE` | `false` | seed demo content |
+| `BULLETIN_OWNER_FINGERPRINT` | — | full OpenSSH SHA-256 fingerprint of the super admin, required outside dev mode |
+| `BULLETIN_DEV_MODE` | `false` | seed demo content and allow first-session ownership when no owner key is set |
 | `BULLETIN_REQUIRE_REPLICATION` | — | entrypoint refuses to start without `LITESTREAM_REPLICA_URL` |
 | `BULLETIN_HOST_KEY_SOURCE` | — | read-only host mount the entrypoint seeds the host key from |
 

@@ -321,9 +321,10 @@ type registeredMsg struct {
 	err  error
 }
 type postedMsg struct {
-	threadID int64
-	postID   int64
-	err      error
+	destination composeDestination
+	threadID    int64
+	postID      int64
+	err         error
 }
 type kudosMsg struct{ err error }
 

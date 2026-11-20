@@ -90,19 +90,30 @@ const (
 	composeReply
 )
 
+type composeDestination struct {
+	boardID, threadID int64 // zero threadID means a new thread on boardID
+}
+
+type composeDraft struct {
+	title, body string
+}
+
 type composeState struct {
-	mode      composeMode
-	title     textinput.Model
-	body      textarea.Model
-	focus     int // 0 title, 1 body
-	err       string
-	busy      bool
-	lastShown overlayKind
-	w, h      int
+	destination composeDestination
+	board       board.Board
+	thread      board.Thread
+	drafts      map[composeDestination]composeDraft
+	title       textinput.Model
+	body        textarea.Model
+	focus       int // 0 title, 1 body
+	err         string
+	busy        bool
+	discarding  bool
+	lastShown   overlayKind
 }
 
 func newCompose(th kit.Theme) composeState {
-	c := composeState{title: textinput.New(), body: textarea.New()}
+	c := composeState{title: textinput.New(), body: textarea.New(), drafts: make(map[composeDestination]composeDraft)}
 	c.title.Prompt = "▍ "
 	c.title.Placeholder = "A title worth clicking"
 	c.title.CharLimit = board.MaxTitleLen
@@ -114,7 +125,6 @@ func newCompose(th kit.Theme) composeState {
 }
 
 func (c *composeState) resize(w, h int) {
-	c.w, c.h = w, h
 	cw := min(w-8, 86)
 	c.title.SetWidth(cw - 10) // prompt (2) + padding (4) + border (2) + cursor (1), with a cell to spare
 	c.body.SetWidth(cw - 6)
@@ -124,7 +134,7 @@ func (c *composeState) resize(w, h int) {
 func (c *composeState) reset() {
 	c.title.Reset()
 	c.body.Reset()
-	c.err, c.busy = "", false
+	c.err, c.busy, c.discarding = "", false, false
 }
 
 func (m *Model) openCompose(mode composeMode) {
@@ -136,18 +146,38 @@ func (m *Model) openCompose(mode composeMode) {
 		m.setFlash("create an account first")
 		return
 	}
-	if m.compose.mode != mode {
-		m.compose.reset()
+	c := &m.compose
+	if c.busy {
+		m.setFlash("Waiting for your post to finish")
+		return
 	}
-	m.compose.mode = mode
-	m.compose.lastShown = ovCompose
-	m.compose.resize(m.w, m.h)
+	b, t := m.curBoard, board.Thread{}
+	if m.screen == scrHome || b.ID == 0 {
+		if i := m.boardMenu.Selected(); i >= 0 && i < len(m.boards) {
+			b = m.boards[i]
+		}
+	}
+	if mode == composeReply {
+		t = m.curThread
+	}
+	if b.ID == 0 || (mode == composeReply && t.ID == 0) {
+		m.setFlash("Choose a board or thread to post in")
+		return
+	}
+	c.reset()
+	c.board, c.thread = b, t
+	c.destination = composeDestination{boardID: b.ID, threadID: t.ID}
+	draft := c.drafts[c.destination]
+	c.title.SetValue(draft.title)
+	c.body.SetValue(draft.body)
+	c.lastShown = ovCompose
+	c.resize(m.w, m.h)
 	stops := m.myStops()
-	kit.StyleInput(&m.compose.title, m.th, stops)
-	kit.StyleArea(&m.compose.body, m.th, stops)
-	m.compose.focus = 1
+	kit.StyleInput(&c.title, m.th, stops)
+	kit.StyleArea(&c.body, m.th, stops)
+	c.focus = 1
 	if mode == composeThread {
-		m.compose.focus = 0
+		c.focus = 0
 	}
 	m.focusCompose()
 	m.openOverlay(ovCompose)
@@ -168,13 +198,37 @@ func (m *Model) updateCompose(msg tea.Msg) tea.Cmd {
 	if c.busy {
 		return nil
 	}
+	if c.discarding {
+		if k, ok := msg.(tea.KeyPressMsg); ok {
+			switch k.String() {
+			case "y":
+				delete(c.drafts, c.destination)
+				c.reset()
+				m.closeOverlay()
+				m.setFlash("Draft discarded")
+			case "esc", "n":
+				c.discarding = false
+			}
+		}
+		return nil
+	}
 	if k, ok := msg.(tea.KeyPressMsg); ok {
 		switch k.String() {
 		case "esc":
+			draft := composeDraft{title: c.title.Value(), body: c.body.Value()}
+			if draft == (composeDraft{}) {
+				delete(c.drafts, c.destination)
+			} else {
+				c.drafts[c.destination] = draft
+				m.setFlash("Draft saved for this session")
+			}
 			m.closeOverlay()
 			return nil
+		case "ctrl+x":
+			c.discarding = true
+			return nil
 		case "tab", "shift+tab":
-			if c.mode == composeThread {
+			if c.destination.threadID == 0 {
 				c.focus = 1 - c.focus
 				m.focusCompose()
 			}
@@ -205,27 +259,26 @@ func (m *Model) submitCompose() tea.Cmd {
 		return nil
 	}
 	acct, d := *m.acct, m.d
+	destination, t := c.destination, c.thread
 	title, body := c.title.Value(), c.body.Value()
 	if strings.TrimSpace(body) == "" {
 		c.err = board.ErrEmptyBody.Error()
 		return nil
 	}
 	c.busy = true
-	if c.mode == composeThread {
+	if destination.threadID == 0 {
 		if strings.TrimSpace(title) == "" {
 			c.busy, c.err = false, board.ErrEmptyTitle.Error()
 			return nil
 		}
-		boardID := m.curBoard.ID
 		return func() tea.Msg {
-			tid, err := d.Service.CreateThread(d.Context, acct, boardID, title, body)
-			return postedMsg{threadID: tid, err: err}
+			tid, err := d.Service.CreateThread(d.Context, acct, destination.boardID, title, body)
+			return postedMsg{destination: destination, threadID: tid, err: err}
 		}
 	}
-	t := m.curThread
 	return func() tea.Msg {
 		pid, err := d.Service.Reply(d.Context, acct, t, body)
-		return postedMsg{threadID: t.ID, postID: pid, err: err}
+		return postedMsg{destination: destination, threadID: t.ID, postID: pid, err: err}
 	}
 }
 
@@ -235,12 +288,12 @@ func (m Model) viewCompose() string {
 	cw := min(m.w-8, 86)
 	var b strings.Builder
 	b.WriteString("\n")
-	if c.mode == composeThread {
-		b.WriteString(kit.S(m.th.Muted).Render("new thread in ") + kit.GradientBold(m.curBoard.Title, kit.PaletteNamed(m.curBoard.Palette).Stops) + "\n\n")
+	if c.destination.threadID == 0 {
+		b.WriteString(kit.S(m.th.Muted).Render("new thread in ") + kit.GradientBold(clip(c.board.Title, max(1, cw-20)), kit.PaletteNamed(c.board.Palette).Stops) + "\n\n")
 		b.WriteString(c.title.View() + "\n")
 		b.WriteString(kit.Rule(cw-6, "─", stops, 0) + "\n\n")
 	} else {
-		b.WriteString(kit.S(m.th.Muted).Render("replying to ") + kit.S(m.th.Text).Bold(true).Render(clip(m.curThread.Title, cw-20)) + "\n\n")
+		b.WriteString(kit.S(m.th.Muted).Render("replying to ") + kit.S(m.th.Text).Bold(true).Render(clip(c.thread.Title, max(1, cw-20))) + "\n\n")
 	}
 	b.WriteString(c.body.View() + "\n\n")
 	count := len([]rune(c.body.Value()))
@@ -251,10 +304,18 @@ func (m Model) viewCompose() string {
 	if c.busy {
 		counter = kit.Spinner(m.frame, stops) + kit.S(m.th.Muted).Render(" posting…")
 	}
+	hints := []kit.Hint{{"ctrl+s", "post"}, {"esc", "save draft"}, {"ctrl+x", "discard"}}
+	if c.destination.threadID == 0 {
+		hints = append(hints, kit.Hint{"tab", "field"})
+	}
+	if c.discarding {
+		counter = kit.S(m.th.Bad).Render("Discard this draft?")
+		hints = []kit.Hint{{"y", "discard"}, {"esc", "keep writing"}}
+	}
 	b.WriteString(counter + "\n")
-	b.WriteString(m.hintBar([]kit.Hint{{"ctrl+s", "post"}, {"tab", "switch"}, {"esc", "cancel"}}, stops, cw-6, "compose"))
+	b.WriteString(m.hintBar(hints, stops, cw-6, "compose"))
 	title := "✎ new thread"
-	if c.mode == composeReply {
+	if c.destination.threadID != 0 {
 		title = "✎ reply"
 	}
 	p := kit.Panel{Title: title, Width: cw, Height: lipgloss.Height(b.String()) + 2, Stops: stops, Focused: true,
@@ -308,9 +369,6 @@ func (m *Model) openPalette() {
 	acts = append(acts,
 		action{"Home", "go", brand, func(m *Model) tea.Cmd { m.goHome(); return nil }},
 		action{"New thread", "compose", brand, func(m *Model) tea.Cmd {
-			if m.curBoard.ID == 0 && len(m.boards) > 0 {
-				m.curBoard = m.boards[max(0, m.boardMenu.Selected())]
-			}
 			m.openCompose(composeThread)
 			return nil
 		}},
@@ -426,7 +484,7 @@ func (m Model) viewHelp() string {
 		{"anywhere", []kit.Hint{{"/ ctrl+k", "jump palette"}, {"u", "user directory"}, {"p", "edit your profile"}, {"esc", "back"}, {"ctrl+c", "leave"}}},
 		{"lists", []kit.Hint{{"↑↓ j k", "move"}, {"⏎ → l", "open"}, {"g G", "top / bottom"}, {"n", "new thread"}, {"o", "thread options"}, {"tab", "board chat"}}},
 		{"threads", []kit.Hint{{"↑↓", "post by post"}, {"tab", "links in post"}, {"o", "post options"}, {"r ⏎", "reply"}, {"f +", "kudos"}, {"!", "report"}}},
-		{"writing", []kit.Hint{{"ctrl+s", "post"}, {"tab", "title ↔ body"}, {"esc", "cancel"}, {"⏎", "send in chat"}, {"tab", "chat: pick message"}}},
+		{"writing", []kit.Hint{{"ctrl+s", "post"}, {"tab", "title ↔ body"}, {"esc", "save draft"}, {"ctrl+x", "discard draft"}, {"⏎", "send in chat"}, {"tab", "chat: pick message"}}},
 	}
 	if m.canModerate() {
 		groups[0].keys = append(groups[0].keys, kit.Hint{"m", "moderation"})

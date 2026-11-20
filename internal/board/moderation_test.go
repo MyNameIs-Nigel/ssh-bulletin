@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mynameis-nigel/ssh-bulletin/internal/identity"
+	"github.com/mynameis-nigel/ssh-bulletin/internal/store"
 )
 
 func registerTestKey(t *testing.T, svc *Service, key byte, handle string) Account {
@@ -19,6 +20,32 @@ func registerTestKey(t *testing.T, svc *Service, key byte, handle string) Accoun
 		t.Fatal(err)
 	}
 	return a
+}
+
+func TestConfiguredOwnerKeepsRoleAcrossConnections(t *testing.T) {
+	ctx := context.Background()
+	svc := newSvc(t)
+	ownerKey := identity.FingerprintFromBytes([32]byte{1})
+	otherKey := identity.FingerprintFromBytes([32]byte{2})
+	if err := svc.ConfigureOwner(ctx, ownerKey); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.Connect(ctx, otherKey); err != nil {
+		t.Fatal(err)
+	}
+	if first := registerTestKey(t, svc, 2, "First"); first.Role != "" {
+		t.Fatalf("first connection got role %q", first.Role)
+	}
+	owner := registerTestKey(t, svc, 1, "Owner")
+	if err := svc.ConfigureOwner(ctx, ownerKey); err != nil {
+		t.Fatalf("reapplying the owner key: %v", err)
+	}
+	if err := svc.ConfigureOwner(ctx, otherKey); !errors.Is(err, store.ErrOwnerMismatch) {
+		t.Fatalf("changing the configured owner: %v", err)
+	}
+	if a, ok, err := svc.Connect(ctx, ownerKey); err != nil || !ok || a.ID != owner.ID || a.Role != RoleOwner {
+		t.Fatalf("owner reconnect: account=%+v, found=%t, err=%v", a, ok, err)
+	}
 }
 
 func TestModerationRolesAndVisibility(t *testing.T) {

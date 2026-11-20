@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/mynameis-nigel/ssh-bulletin/internal/identity"
 )
 
 // Config holds server settings.
@@ -69,6 +71,10 @@ func Load() (Config, error) {
 	}
 
 	switch {
+	case cfg.OwnerFingerprint == "" && !cfg.DevMode:
+		return Config{}, fmt.Errorf("BULLETIN_OWNER_FINGERPRINT is required outside development mode")
+	case cfg.OwnerFingerprint != "" && !identity.ValidFingerprint(cfg.OwnerFingerprint):
+		return Config{}, fmt.Errorf("BULLETIN_OWNER_FINGERPRINT must be a full OpenSSH SHA-256 fingerprint")
 	case cfg.ListenPort < 1 || cfg.ListenPort > 65535:
 		return Config{}, fmt.Errorf("BULLETIN_LISTEN_PORT must be 1-65535, got %d", cfg.ListenPort)
 	case cfg.MaxSessionsPerKey < 1:

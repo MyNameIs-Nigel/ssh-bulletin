@@ -148,7 +148,6 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if errors.Is(msg.err, board.ErrNotFound) {
 			m.posts = nil
 			m.closeOverlay()
-			m.compose.reset()
 			m.setFlash("This thread is unavailable")
 			cmds = append(cmds, m.back())
 			break
@@ -244,18 +243,26 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.loadHome())
 
 	case postedMsg:
-		m.compose.busy = false
-		if msg.err != nil {
-			m.compose.err = friendly(msg.err)
+		c := &m.compose
+		if msg.destination != c.destination {
 			break
 		}
-		m.closeOverlay()
-		m.compose.reset()
-		if m.screen != scrThread {
-			cmds = append(cmds, m.enterThread(board.Thread{ID: msg.threadID, BoardID: m.curBoard.ID}, msg.postID))
-		} else {
-			cmds = append(cmds, m.loadPosts(msg.threadID, msg.postID))
+		c.busy = false
+		if msg.err != nil {
+			c.err = friendly(msg.err)
+			break
 		}
+		delete(c.drafts, msg.destination)
+		if m.overlay == ovCompose {
+			m.closeOverlay()
+			if m.screen != scrThread || m.curThread.ID != msg.threadID {
+				m.curBoard = c.board
+				cmds = append(cmds, m.enterThread(board.Thread{ID: msg.threadID, BoardID: msg.destination.boardID}, msg.postID))
+			} else {
+				cmds = append(cmds, m.loadPosts(msg.threadID, msg.postID))
+			}
+		}
+		c.reset()
 		cmds = append(cmds, m.loadHome())
 		m.toasts.Push(m.now(), "Posted", "", m.myStops())
 
