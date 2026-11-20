@@ -123,8 +123,11 @@ func (m *Model) openOptions() {
 		add("Reply linking this post", strings.TrimSpace(ref), func(m *Model) tea.Cmd {
 			m.closeOverlay()
 			m.openCompose(composeReply)
-			if m.overlay == ovCompose && !strings.Contains(m.compose.body.Value(), strings.TrimSpace(ref)) {
-				m.compose.body.InsertString(ref)
+			if m.overlay == ovCompose {
+				m.compose.replyTo = p.ID
+				if !strings.Contains(m.compose.body.Value(), strings.TrimSpace(ref)) {
+					m.compose.body.InsertString(ref)
+				}
 			}
 			return nil
 		})
@@ -157,6 +160,14 @@ func (m *Model) openOptions() {
 			m.startThreadLockForm(t)
 			return nil
 		})
+	}
+	if m.screen == scrThread && m.acct != nil && !t.Removed {
+		on := !m.threadMuted
+		label := "Mute thread notifications"
+		if !on {
+			label = "Unmute thread notifications"
+		}
+		add(label, "", func(m *Model) tea.Cmd { return m.setInboxThreadMuted(t.ID, on) })
 	}
 	m.opts.menu.SetItems(items)
 	m.compose.lastShown = ovOptions

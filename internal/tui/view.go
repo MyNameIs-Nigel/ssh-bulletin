@@ -91,6 +91,8 @@ func (m Model) compose3() string {
 			bodyStr = m.viewDirectory()
 		case scrUserProfile:
 			bodyStr = m.viewUserProfile()
+		case scrInbox:
+			bodyStr = m.viewInbox()
 		}
 		sc.Base = strings.Join([]string{m.masthead(), kit.Block(bodyStr, m.w, m.body().h), m.footer()}, "\n")
 	}
@@ -158,6 +160,8 @@ func (m Model) crumbs() ([]string, []func(*Model) tea.Cmd) {
 		return []string{"directory"}, []func(*Model) tea.Cmd{nil}
 	case scrUserProfile:
 		return []string{"profile"}, []func(*Model) tea.Cmd{nil}
+	case scrInbox:
+		return []string{"boards", "inbox"}, []func(*Model) tea.Cmd{home, nil}
 	}
 	return []string{"boards"}, []func(*Model) tea.Cmd{nil}
 }
@@ -240,7 +244,7 @@ func (m Model) hints() []kit.Hint {
 		if m.canModerate() {
 			return []kit.Hint{{"↑↓", "move"}, {"⏎", "open"}, {"u", "directory"}, {"m", "moderation"}, {"?", "help"}}
 		}
-		return []kit.Hint{{"↑↓", "move"}, {"⏎", "open"}, {"u", "users"}, {"p", "edit"}, {"n", "new thread"}, {"/", "jump"}, {"?", "help"}}
+		return []kit.Hint{{"↑↓", "move"}, {"⏎", "open"}, {"i", fmt.Sprintf("inbox (%d)", m.inbox.unread)}, {"u", "users"}, {"p", "edit"}, {"n", "new thread"}, {"/", "jump"}, {"?", "help"}}
 	case scrBoard:
 		if m.chatFocus {
 			return []kit.Hint{{"⏎", "join chat"}, {"tab", "threads"}, {"n", "new thread"}, {"esc", "back"}, {"?", "help"}}
@@ -273,6 +277,8 @@ func (m Model) hints() []kit.Hint {
 		return append(hints, kit.Hint{"?", "help"})
 	case scrModeration:
 		return m.moderationHints()
+	case scrInbox:
+		return []kit.Hint{{"⏎", "open"}, {"m", "mute thread"}, {"↑↓", "move"}, {"pgup/dn", "page"}, {"esc", "back"}}
 	case scrProfile:
 		return []kit.Hint{{"tab", "field"}, {"←→", "choose"}, {"ctrl+s", "save"}, {"esc", "back"}}
 	case scrDirectory:

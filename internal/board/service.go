@@ -141,7 +141,7 @@ func (s *Service) CreateThread(ctx context.Context, author Account, boardID int6
 	case utf8.RuneCountInString(title) > MaxTitleLen, !bodyFits(body):
 		return 0, ErrTooLong
 	}
-	tid, pid, err := s.st.CreateThread(ctx, boardID, author.ID, title, body, s.now().Unix())
+	tid, pid, err := s.st.CreateThread(ctx, boardID, author.ID, title, body, s.now().Unix(), mentionHandles(title, body))
 	if err != nil {
 		return 0, err
 	}
@@ -151,6 +151,11 @@ func (s *Service) CreateThread(ctx context.Context, author Account, boardID int6
 
 // Reply validates and appends a post.
 func (s *Service) Reply(ctx context.Context, author Account, t Thread, body string) (int64, error) {
+	return s.ReplyTo(ctx, author, t, 0, body)
+}
+
+// ReplyTo appends a reply with an optional direct recipient from the thread.
+func (s *Service) ReplyTo(ctx context.Context, author Account, t Thread, replyTo int64, body string) (int64, error) {
 	if author.ID == 0 {
 		return 0, ErrNoAccount
 	}
@@ -161,7 +166,7 @@ func (s *Service) Reply(ctx context.Context, author Account, t Thread, body stri
 	case !bodyFits(body):
 		return 0, ErrTooLong
 	}
-	pid, title, err := s.st.Reply(ctx, t.ID, author.ID, body, s.now().Unix())
+	pid, title, err := s.st.Reply(ctx, t.ID, author.ID, replyTo, body, s.now().Unix(), mentionHandles("", body))
 	if errors.Is(err, store.ErrNotFound) {
 		return 0, ErrNotFound
 	}
