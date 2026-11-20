@@ -96,28 +96,30 @@ type composeDestination struct {
 	boardID, threadID int64 // zero threadID means a new thread on boardID
 }
 
-type composeDraft struct {
-	title, body string
-	replyTo     int64
-}
-
 type composeState struct {
-	destination composeDestination
-	board       board.Board
-	thread      board.Thread
-	replyTo     int64
-	drafts      map[composeDestination]composeDraft
-	title       textinput.Model
-	body        textarea.Model
-	focus       int // 0 title, 1 body
-	err         string
-	busy        bool
-	discarding  bool
-	lastShown   overlayKind
+	destination         composeDestination
+	board               board.Board
+	thread              board.Thread
+	replyTo             int64
+	revision            int64
+	loadRequest         int
+	loading, loadFailed bool
+	linkedPost          int64
+	linkedRef           string
+	edit                board.Post
+	editOpening         bool
+	title               textinput.Model
+	body                textarea.Model
+	focus               int // 0 title, 1 body
+	err                 string
+	busy                bool
+	busyLabel           string
+	discarding          bool
+	lastShown           overlayKind
 }
 
 func newCompose(th kit.Theme) composeState {
-	c := composeState{title: textinput.New(), body: textarea.New(), drafts: make(map[composeDestination]composeDraft)}
+	c := composeState{title: textinput.New(), body: textarea.New()}
 	c.title.Prompt = "▍ "
 	c.title.Placeholder = "A title worth clicking"
 	c.title.CharLimit = board.MaxTitleLen
@@ -139,26 +141,27 @@ func (c *composeState) reset() {
 	c.title.Reset()
 	c.body.Reset()
 	c.err, c.busy, c.discarding = "", false, false
-	c.replyTo = 0
+	c.replyTo, c.revision, c.linkedPost, c.linkedRef = 0, 0, 0, ""
+	c.loading, c.loadFailed, c.edit, c.editOpening = false, false, board.Post{}, false
 }
 
-func (m *Model) openCompose(mode composeMode) {
+func (m *Model) openCompose(mode composeMode) tea.Cmd {
 	if mode == composeReply && m.curThread.Removed {
 		m.setFlash("This thread is closed to new replies")
-		return
+		return nil
 	}
 	if mode == composeReply && m.curThread.Locked() {
 		m.setFlash("This thread is locked to new replies")
-		return
+		return nil
 	}
 	if m.acct == nil {
 		m.setFlash("create an account first")
-		return
+		return nil
 	}
 	c := &m.compose
 	if c.busy {
 		m.setFlash("Waiting for your post to finish")
-		return
+		return nil
 	}
 	b, t := m.curBoard, board.Thread{}
 	if m.screen == scrHome || b.ID == 0 {
@@ -172,22 +175,34 @@ func (m *Model) openCompose(mode composeMode) {
 	}
 	if b.ID == 0 || (mode == composeReply && t.ID == 0) {
 		m.setFlash("Choose a board or thread to post in")
-		return
+		return nil
 	}
 	c.reset()
 	c.board, c.thread = b, t
 	c.destination = composeDestination{boardID: b.ID, threadID: t.ID}
-	draft := c.drafts[c.destination]
-	c.title.SetValue(draft.title)
-	c.body.SetValue(draft.body)
-	c.replyTo = draft.replyTo
+	m.showCompose()
+	c.loadRequest++
+	c.loading = true
+	d, viewer, key, request := m.d, m.viewerID(), c.destination.draftKey(), c.loadRequest
+	return func() tea.Msg {
+		draft, err := d.Service.Draft(d.Context, viewer, key)
+		return draftLoadedMsg{request: request, draft: draft, err: err}
+	}
+}
+
+func (c composeState) hasTitle() bool {
+	return c.editOpening || c.edit.ID == 0 && c.destination.threadID == 0
+}
+
+func (m *Model) showCompose() {
+	c := &m.compose
 	c.lastShown = ovCompose
 	c.resize(m.w, m.h)
 	stops := m.myStops()
 	kit.StyleInput(&c.title, m.th, stops)
 	kit.StyleArea(&c.body, m.th, stops)
 	c.focus = 1
-	if mode == composeThread {
+	if c.hasTitle() {
 		c.focus = 0
 	}
 	m.focusCompose()
@@ -209,14 +224,17 @@ func (m *Model) updateCompose(msg tea.Msg) tea.Cmd {
 	if c.busy {
 		return nil
 	}
+	if c.loading || c.loadFailed {
+		if k, ok := msg.(tea.KeyPressMsg); ok && k.String() == "esc" {
+			m.closeOverlay()
+		}
+		return nil
+	}
 	if c.discarding {
 		if k, ok := msg.(tea.KeyPressMsg); ok {
 			switch k.String() {
 			case "y":
-				delete(c.drafts, c.destination)
-				c.reset()
-				m.closeOverlay()
-				m.setFlash("Draft discarded")
+				return m.persistCompose(draftDiscard)
 			case "esc", "n":
 				c.discarding = false
 			}
@@ -226,20 +244,16 @@ func (m *Model) updateCompose(msg tea.Msg) tea.Cmd {
 	if k, ok := msg.(tea.KeyPressMsg); ok {
 		switch k.String() {
 		case "esc":
-			draft := composeDraft{title: c.title.Value(), body: c.body.Value(), replyTo: c.replyTo}
-			if draft.title == "" && draft.body == "" {
-				delete(c.drafts, c.destination)
-			} else {
-				c.drafts[c.destination] = draft
-				m.setFlash("Draft saved for this session")
+			if c.edit.ID != 0 || c.revision == 0 && c.title.Value() == "" && c.body.Value() == "" {
+				m.closeOverlay()
+				return nil
 			}
-			m.closeOverlay()
-			return nil
+			return m.persistCompose(draftClose)
 		case "ctrl+x":
-			c.discarding = true
+			c.discarding = c.edit.ID == 0
 			return nil
 		case "tab", "shift+tab":
-			if c.destination.threadID == 0 {
+			if c.hasTitle() {
 				c.focus = 1 - c.focus
 				m.focusCompose()
 			}
@@ -255,11 +269,15 @@ func (m *Model) updateCompose(msg tea.Msg) tea.Cmd {
 		}
 	}
 	c.err = ""
+	beforeTitle, beforeBody := c.title.Value(), c.body.Value()
 	var cmd tea.Cmd
 	if c.focus == 0 {
 		c.title, cmd = c.title.Update(msg)
 	} else {
 		c.body, cmd = c.body.Update(msg)
+	}
+	if c.edit.ID == 0 && (beforeTitle != c.title.Value() || beforeBody != c.body.Value()) {
+		return tea.Batch(cmd, m.persistCompose(draftAuto))
 	}
 	return cmd
 }
@@ -270,26 +288,30 @@ func (m *Model) submitCompose() tea.Cmd {
 		return nil
 	}
 	acct, d := *m.acct, m.d
-	destination, t, replyTo := c.destination, c.thread, c.replyTo
+	destination := c.destination
 	title, body := c.title.Value(), c.body.Value()
 	if strings.TrimSpace(body) == "" {
 		c.err = board.ErrEmptyBody.Error()
 		return nil
 	}
-	c.busy = true
-	if destination.threadID == 0 {
-		if strings.TrimSpace(title) == "" {
-			c.busy, c.err = false, board.ErrEmptyTitle.Error()
-			return nil
-		}
+	if c.hasTitle() && strings.TrimSpace(title) == "" {
+		c.err = board.ErrEmptyTitle.Error()
+		return nil
+	}
+	c.busy, c.busyLabel = true, "Posting…"
+	if c.edit.ID != 0 {
+		c.busyLabel = "Saving changes…"
+		post := c.edit
 		return func() tea.Msg {
-			tid, err := d.Service.CreateThread(d.Context, acct, destination.boardID, title, body)
-			return postedMsg{destination: destination, threadID: tid, err: err}
+			changed, err := d.Service.EditPost(d.Context, acct.ID, post, title, body)
+			return editSavedMsg{post: post, changed: changed, err: err}
 		}
 	}
+	c.revision = d.Service.NextDraftRevision(c.revision)
+	draft := board.Draft{Title: title, Body: body, ReplyTo: c.replyTo, Revision: c.revision}
 	return func() tea.Msg {
-		pid, err := d.Service.ReplyTo(d.Context, acct, t, replyTo, body)
-		return postedMsg{destination: destination, threadID: t.ID, postID: pid, err: err}
+		tid, pid, err := d.Service.SubmitDraft(d.Context, acct, destination.draftKey(), draft)
+		return postedMsg{destination: destination, threadID: tid, postID: pid, err: err}
 	}
 }
 
@@ -300,10 +322,15 @@ func (m Model) viewCompose() string {
 	var b strings.Builder
 	b.WriteString("\n")
 	publicCue := ""
-	if m.acct != nil && m.acct.PostCount == 0 {
+	if c.edit.ID == 0 && m.acct != nil && m.acct.PostCount == 0 {
 		publicCue = kit.S(m.th.Muted).Render("Posts are public to every arcade player.")
 	}
-	if c.destination.threadID == 0 {
+	if c.edit.ID != 0 {
+		b.WriteString(kit.S(m.th.Muted).Render("Editing your "+postKind(c.editOpening)) + "\n\n")
+		if c.hasTitle() {
+			b.WriteString(c.title.View() + "\n" + kit.Rule(cw-6, "─", stops, 0) + "\n\n")
+		}
+	} else if c.destination.threadID == 0 {
 		b.WriteString(kit.S(m.th.Muted).Render("new thread in ") + kit.GradientBold(clip(c.board.Title, max(1, cw-20)), kit.PaletteNamed(c.board.Palette).Stops) + "\n" + publicCue + "\n")
 		b.WriteString(c.title.View() + "\n")
 		b.WriteString(kit.Rule(cw-6, "─", stops, 0) + "\n\n")
@@ -325,11 +352,16 @@ func (m Model) viewCompose() string {
 	if c.err != "" {
 		counter = kit.S(m.th.Bad).Render("✗ "+c.err) + "   " + counter
 	}
-	if c.busy {
-		counter = kit.Spinner(m.frame, stops) + kit.S(m.th.Muted).Render(" posting…")
+	if c.loading {
+		counter = kit.S(m.th.Muted).Render("Loading draft…")
+	} else if c.busy {
+		counter = kit.Spinner(m.frame, stops) + kit.S(m.th.Muted).Render(" "+c.busyLabel)
 	}
 	hints := []kit.Hint{{"ctrl+s", "post"}, {"esc", "save draft"}, {"ctrl+x", "discard"}}
-	if c.destination.threadID == 0 {
+	if c.edit.ID != 0 {
+		hints = []kit.Hint{{"ctrl+s", "save edit"}, {"esc", "cancel"}}
+	}
+	if c.hasTitle() {
 		hints = append(hints, kit.Hint{"tab", "field"})
 	}
 	if c.discarding {
@@ -341,6 +373,9 @@ func (m Model) viewCompose() string {
 	title := "✎ new thread"
 	if c.destination.threadID != 0 {
 		title = "✎ reply"
+	}
+	if c.edit.ID != 0 {
+		title = "✎ edit " + postKind(c.editOpening)
 	}
 	p := kit.Panel{Title: title, Width: cw, Height: lipgloss.Height(b.String()) + 2, Stops: stops, Focused: true,
 		Phase: m.panelPhase(), Fill: m.th.Overlay, Theme: m.th, PadX: 2}
@@ -396,9 +431,9 @@ func (m *Model) openPalette() {
 	}
 	acts = append(acts,
 		action{"Home", "go", brand, func(m *Model) tea.Cmd { m.goHome(); return nil }},
+		action{"Search threads", "titles and posts", brand, (*Model).openSearch},
 		action{"New thread", "compose", brand, func(m *Model) tea.Cmd {
-			m.openCompose(composeThread)
-			return nil
+			return m.openCompose(composeThread)
 		}},
 		action{"Edit profile", "palette, bio, flair", m.myStops(), func(m *Model) tea.Cmd { m.openProfile(); return nil }},
 		action{"Keyboard help", "help", brand, (*Model).openHelp},

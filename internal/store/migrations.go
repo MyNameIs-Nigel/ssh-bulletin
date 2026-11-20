@@ -169,6 +169,39 @@ var migrations = []string{
 	// v10: track the installation's welcome thread independently of its title.
 	`ALTER TABLE threads ADD COLUMN welcome INTEGER NOT NULL DEFAULT 0;
 	CREATE UNIQUE INDEX one_welcome_thread ON threads (welcome) WHERE welcome = 1;`,
+	// v11: author edits, full-text search, and reconnect-safe compose drafts.
+	`ALTER TABLE posts ADD COLUMN edited_at INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE posts ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;
+	CREATE TABLE drafts (
+		account_id INTEGER NOT NULL REFERENCES accounts(id),
+		board_id INTEGER NOT NULL REFERENCES boards(id),
+		thread_id INTEGER NOT NULL CHECK (thread_id >= 0),
+		title TEXT NOT NULL,
+		body TEXT NOT NULL,
+		reply_to INTEGER NOT NULL,
+		revision INTEGER NOT NULL,
+		PRIMARY KEY (account_id, board_id, thread_id)
+	) WITHOUT ROWID;
+	CREATE VIRTUAL TABLE forum_search USING fts5(title, body);
+	CREATE VIEW searchable_posts AS SELECT p.id,
+		CASE WHEN p.id = (SELECT MIN(id) FROM posts WHERE thread_id = p.thread_id) THEN t.title ELSE '' END AS title,
+		p.body, p.thread_id FROM posts p JOIN threads t ON t.id = p.thread_id
+		WHERE p.deleted = 0 AND p.removed = 0 AND t.removed = 0;
+	INSERT INTO forum_search (rowid, title, body) SELECT id, title, body FROM searchable_posts;
+	CREATE TRIGGER post_search_insert AFTER INSERT ON posts BEGIN
+		INSERT INTO forum_search (rowid, title, body) SELECT id, title, body FROM searchable_posts WHERE id = NEW.id;
+	END;
+	CREATE TRIGGER post_search_update AFTER UPDATE OF body, removed, deleted ON posts BEGIN
+		DELETE FROM forum_search WHERE rowid = OLD.id;
+		INSERT INTO forum_search (rowid, title, body) SELECT id, title, body FROM searchable_posts WHERE id = NEW.id;
+	END;
+	CREATE TRIGGER post_search_delete AFTER DELETE ON posts BEGIN
+		DELETE FROM forum_search WHERE rowid = OLD.id;
+	END;
+	CREATE TRIGGER thread_search_update AFTER UPDATE OF title, removed ON threads BEGIN
+		DELETE FROM forum_search WHERE rowid IN (SELECT id FROM posts WHERE thread_id = NEW.id);
+		INSERT INTO forum_search (rowid, title, body) SELECT id, title, body FROM searchable_posts WHERE thread_id = NEW.id;
+	END;`,
 }
 
 func (st *Store) migrate(ctx context.Context) error {

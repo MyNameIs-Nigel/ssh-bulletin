@@ -127,3 +127,40 @@ func TestUpgradePreservesReportsAndDecisions(t *testing.T) {
 		t.Fatalf("migrated decisions: %+v %v", removed, err)
 	}
 }
+
+func TestSearchMigrationIndexesExistingVisiblePosts(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "archive.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, migration := range migrations[:10] {
+		if _, err := db.ExecContext(ctx, migration); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.ExecContext(ctx, `PRAGMA user_version = 10;
+		INSERT INTO accounts (id, fingerprint, handle, handle_lower, palette, created_at, last_seen) VALUES
+		(1, 'player-key', 'Player', 'player', 'reef', 1, 1);
+		INSERT INTO threads (id, board_id, title, author_id, created_at, last_post_at) VALUES (1, 1, 'Historic thread', 1, 1, 2);
+		INSERT INTO posts (id, thread_id, author_id, body, created_at, removed) VALUES
+		(1, 1, 1, 'Existing searchable body', 1, 0), (2, 1, 1, 'Withdrawn evidence', 2, 1);`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	st, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	got, err := st.SearchThreads(ctx, 1, `"historic"`, 0, 10)
+	if err != nil || len(got) != 1 || got[0].ThreadID != 1 || got[0].PostID != 1 {
+		t.Fatalf("migrated search result: %+v %v", got, err)
+	}
+	got, err = st.SearchThreads(ctx, 1, `"withdrawn"`, 0, 10)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("removed post indexed: %+v %v", got, err)
+	}
+}

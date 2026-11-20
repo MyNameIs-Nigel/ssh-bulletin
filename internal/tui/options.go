@@ -122,14 +122,11 @@ func (m *Model) openOptions() {
 		ref := fmt.Sprintf("#%d/%d ", t.ID, m.postCursor+1)
 		add("Reply linking this post", strings.TrimSpace(ref), func(m *Model) tea.Cmd {
 			m.closeOverlay()
-			m.openCompose(composeReply)
+			load := m.openCompose(composeReply)
 			if m.overlay == ovCompose {
-				m.compose.replyTo = p.ID
-				if !strings.Contains(m.compose.body.Value(), strings.TrimSpace(ref)) {
-					m.compose.body.InsertString(ref)
-				}
+				m.compose.linkedPost, m.compose.linkedRef = p.ID, ref
 			}
-			return nil
+			return load
 		})
 	}
 	if p.ID != 0 && p.Placeholder() == "" {
@@ -157,6 +154,12 @@ func (m *Model) openOptions() {
 			m.reportPost(p, title, opening)
 			return nil
 		})
+		if p.AuthorID == m.viewerID() && !t.Removed {
+			add("Edit "+postKind(opening), "", func(m *Model) tea.Cmd {
+				m.openEditPost(p, opening)
+				return nil
+			})
+		}
 	}
 	if m.canModerate() && !t.Removed {
 		label := "Lock thread"

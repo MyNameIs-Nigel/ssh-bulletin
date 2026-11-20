@@ -62,9 +62,11 @@ func (m *Model) updateHome(k tea.KeyPressMsg) tea.Cmd {
 			return m.enterBoard(m.boards[i])
 		}
 	case "n":
-		m.openCompose(composeThread)
+		return m.openCompose(composeThread)
 	case "i":
 		return m.openInbox()
+	case "s":
+		return m.openSearch()
 	}
 	return nil
 }

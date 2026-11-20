@@ -41,15 +41,19 @@ func (m *Model) receiveMutes(ids map[int64]bool) tea.Cmd {
 	if m.screen == scrThread {
 		m.followCursor()
 	}
+	var search tea.Cmd
+	if m.screen == scrSearch && m.search.query != "" {
+		search = m.runSearch(m.search.page)
+	}
 	c := &m.chat
 	if c.request == 0 {
-		return nil
+		return search
 	}
 	keep, count := m.selectedChatID(), len(c.msgs)
 	c.msgs = slices.DeleteFunc(slices.Clone(c.msgs), func(msg board.ChatMessage) bool { return ids[msg.AuthorID] })
 	c.loadingOlder, c.unread = false, 0
 	m.reselectChat(keep)
-	return m.loadChat(chatReplace, 0, max(count, board.ChatPage))
+	return tea.Batch(search, m.loadChat(chatReplace, 0, max(count, board.ChatPage)))
 }
 
 func (m Model) collapsedPost(p board.Post) bool {

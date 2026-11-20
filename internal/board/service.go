@@ -7,6 +7,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -24,9 +25,10 @@ type (
 
 // Service is shared by every session.
 type Service struct {
-	st     *store.Store
-	broker *Broker
-	now    func() time.Time
+	st            *store.Store
+	broker        *Broker
+	now           func() time.Time
+	draftRevision atomic.Int64
 }
 
 // NewService wires the store and broker.
@@ -128,6 +130,10 @@ func (s *Service) Stats(ctx context.Context) (Stats, error) { return s.st.Stats(
 
 // CreateThread validates and starts a thread.
 func (s *Service) CreateThread(ctx context.Context, author Account, boardID int64, title, body string) (int64, error) {
+	return s.createThread(ctx, author, boardID, title, body, 0)
+}
+
+func (s *Service) createThread(ctx context.Context, author Account, boardID int64, title, body string, draftRevision int64) (int64, error) {
 	if author.ID == 0 {
 		return 0, ErrNoAccount
 	}
@@ -141,7 +147,7 @@ func (s *Service) CreateThread(ctx context.Context, author Account, boardID int6
 	case utf8.RuneCountInString(title) > MaxTitleLen, !bodyFits(body):
 		return 0, ErrTooLong
 	}
-	tid, pid, err := s.st.CreateThread(ctx, boardID, author.ID, title, body, s.now().Unix(), mentionHandles(title, body))
+	tid, pid, err := s.st.CreateThread(ctx, boardID, author.ID, title, body, s.now().Unix(), mentionHandles(title, body), draftRevision)
 	if err != nil {
 		return 0, err
 	}
@@ -156,6 +162,10 @@ func (s *Service) Reply(ctx context.Context, author Account, t Thread, body stri
 
 // ReplyTo appends a reply with an optional direct recipient from the thread.
 func (s *Service) ReplyTo(ctx context.Context, author Account, t Thread, replyTo int64, body string) (int64, error) {
+	return s.replyTo(ctx, author, t, replyTo, body, 0)
+}
+
+func (s *Service) replyTo(ctx context.Context, author Account, t Thread, replyTo int64, body string, draftRevision int64) (int64, error) {
 	if author.ID == 0 {
 		return 0, ErrNoAccount
 	}
@@ -166,7 +176,7 @@ func (s *Service) ReplyTo(ctx context.Context, author Account, t Thread, replyTo
 	case !bodyFits(body):
 		return 0, ErrTooLong
 	}
-	pid, title, err := s.st.Reply(ctx, t.ID, author.ID, replyTo, body, s.now().Unix(), mentionHandles("", body))
+	pid, title, err := s.st.Reply(ctx, t.ID, author.ID, replyTo, body, s.now().Unix(), mentionHandles("", body), draftRevision)
 	if errors.Is(err, store.ErrNotFound) {
 		return 0, ErrNotFound
 	}
