@@ -4,7 +4,9 @@ set -eu
 image=${1:?image required}
 version=${2:?version required}
 container=$(docker run -d --read-only --tmpfs /tmp --cap-drop ALL \
-  --security-opt no-new-privileges "$image")
+  --security-opt no-new-privileges \
+  -e BULLETIN_OWNER_FINGERPRINT=SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA \
+  "$image")
 trap '
   if [ "$?" -ne 0 ]; then docker logs "$container" >&2 || true; fi
   docker rm -fv "$container" >/dev/null

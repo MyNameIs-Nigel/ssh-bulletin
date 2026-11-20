@@ -62,10 +62,7 @@ func (m *Model) updateHome(k tea.KeyPressMsg) tea.Cmd {
 			return m.enterBoard(m.boards[i])
 		}
 	case "n":
-		if i := m.boardMenu.Selected(); i >= 0 {
-			m.curBoard = m.boards[i]
-			m.openCompose(composeThread)
-		}
+		m.openCompose(composeThread)
 	}
 	return nil
 }

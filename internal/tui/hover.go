@@ -335,6 +335,8 @@ func hintPress(label string) (tea.KeyPressMsg, bool) {
 		return tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}, true
 	case "ctrl+k":
 		return tea.KeyPressMsg{Code: 'k', Mod: tea.ModCtrl}, true
+	case "ctrl+x":
+		return tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl}, true
 	}
 	if r := []rune(label); len(r) == 1 && r[0] < unicode.MaxASCII && unicode.IsPrint(r[0]) {
 		return tea.KeyPressMsg{Code: r[0], Text: label}, true

@@ -69,6 +69,7 @@ PIDS+=("$!")
       BULLETIN_LISTEN_PORT: "2222"
       BULLETIN_HOST_KEY_PATH: /var/lib/bulletin/ssh_host_key
       BULLETIN_DB_PATH: /var/lib/bulletin/bulletin.db
+      BULLETIN_OWNER_FINGERPRINT: ${BULLETIN_OWNER_FINGERPRINT:-}
       # Every connection arrives from the router's one IP; the router does the
       # public throttling. The default (2/s) would rate-limit the whole arcade.
       BULLETIN_RATE_LIMIT_PER_SECOND: "50"
@@ -120,6 +121,26 @@ and is readable by the container. Confirm that the EC2 instance profile's
 `ssharcade-litestream-s3-policy` allows bucket listing for the Bulletin prefix
 and object access under `bulletin/db/`. Litestream must be able to restore
 and replicate with that role.
+
+### Reserve and verify the super admin
+
+1. On the intended owner's machine, run `ssh-keygen -l -E sha256 -f ~/.ssh/id_ed25519.pub`.
+   Use the public key for the identity that will sign in to Bulletin.
+2. On the fleet host, set `BULLETIN_OWNER_FINGERPRINT` in `/srv/ssharcade/.env`
+   to the full `SHA256:…` value. Include the environment mapping shown in the
+   Bulletin Compose service above. Run `docker compose config --format json`
+   and check `services.bulletin.environment.BULLETIN_OWNER_FINGERPRINT`
+   against the fingerprint from step 1.
+3. Keep public access to Bulletin closed during verification. After starting
+   the service, sign in with the intended key through the restricted listener
+   or a staging lobby and finish onboarding. Open **View your profile** from
+   the `/` menu and confirm it shows `SU` and the expected fingerprint. Sign in
+   with a second key and confirm it has no staff badge. Then open public access.
+
+Bulletin reserves the configured key before it opens the listener. Startup
+fails if the value is missing, malformed, or different from the owner already
+recorded in the database. For an existing deployment, resolve an owner
+mismatch before rollout and preserve the production database.
 
 ## 4. Enable deployment and publish a release
 
