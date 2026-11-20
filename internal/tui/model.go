@@ -95,6 +95,7 @@ type Model struct {
 
 	idleSplash bool
 	idleInhale bool
+	idleLink   linkModalState
 
 	// Data.
 	stats            board.Stats

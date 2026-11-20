@@ -163,7 +163,11 @@ func (m *Model) clickHot(msg tea.MouseClickMsg) (tea.Cmd, bool) {
 	if msg.Button != tea.MouseLeft || m.w < minW || m.h < minH {
 		return nil, false
 	}
-	key := m.ui.hot.At(msg.X, msg.Y)
+	hot := &m.ui.hot
+	if m.idleSplash {
+		hot = &m.ui.idle.hot
+	}
+	key := hot.At(msg.X, msg.Y)
 	run := m.ui.targets[key]
 	if run == nil {
 		return nil, false
@@ -225,10 +229,8 @@ type linkModalState struct {
 	copied bool
 }
 
-// openLink warns before an external link can be used. The address is shown
-// whole and its host apart from it, since a label or a user@host prefix can
-// make a link look like it goes somewhere it does not.
-func (m *Model) openLink(raw string) {
+// The warning shows the full address and the hostname separately.
+func newLinkModal(raw string) linkModalState {
 	st := linkModalState{url: raw}
 	if u, err := url.Parse(raw); err == nil {
 		st.host = strings.ToLower(u.Hostname())
@@ -238,31 +240,42 @@ func (m *Model) openLink(raw string) {
 			st.odd = true
 		}
 	}
-	m.link = st
+	return st
+}
+
+func (m *Model) openLink(raw string) {
+	m.link = newLinkModal(raw)
 	m.compose.lastShown = ovLink
 	m.openOverlay(ovLink)
 }
 
 func (m *Model) updateLinkModal(msg tea.Msg) tea.Cmd {
+	cmd, close := m.link.update(msg)
+	if close {
+		m.closeOverlay()
+	}
+	return cmd
+}
+
+func (l *linkModalState) update(msg tea.Msg) (tea.Cmd, bool) {
 	k, ok := msg.(tea.KeyPressMsg)
 	if !ok {
-		return nil
+		return nil, false
 	}
 	switch k.String() {
 	case "esc", "q", "n", "backspace":
-		m.closeOverlay()
+		return nil, true
 	case "c", "y", "enter":
-		m.link.copied = true
-		return tea.SetClipboard(m.link.url)
+		l.copied = true
+		return tea.SetClipboard(l.url), false
 	}
-	return nil
+	return nil, false
 }
 
-func (m Model) viewLinkModal() string {
+func (m Model) viewLinkModal(l linkModalState, phase float64) string {
 	w := min(m.w-8, 72)
 	iw := w - 6
 	warn := []colorT{m.th.Warn, m.th.Bad}
-	l := m.link
 	var b strings.Builder
 	b.WriteString("\n" + kit.GradientBold("This link leaves the bulletin.", warn) + "\n")
 	b.WriteString(kit.S(m.th.Subtle).Render(kit.Wrap("Someone posted it; nobody here has checked where it goes. Don't trust it with your keys, passwords, or anything you would not post publicly.", iw)) + "\n\n")
@@ -291,7 +304,7 @@ func (m Model) viewLinkModal() string {
 	}
 	b.WriteString(m.hintBar([]kit.Hint{{"c", "copy link"}, {"esc", "go back"}}, warn, iw, "modal"))
 	p := kit.Panel{Title: "⚠ external link", Width: w, Height: lipgloss.Height(b.String()) + 2, Stops: warn, Focused: true,
-		Phase: m.panelPhase(), Fill: m.th.Overlay, Theme: m.th, PadX: 2}
+		Phase: phase, Fill: m.th.Overlay, Theme: m.th, PadX: 2}
 	return p.Render(b.String())
 }
 
