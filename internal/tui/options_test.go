@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -10,6 +11,24 @@ import (
 
 	"github.com/mynameis-nigel/ssh-bulletin/internal/board"
 )
+
+func TestReportPostMenuAndShortcutUseTheSameTarget(t *testing.T) {
+	m, _ := lobbyThread(t, 80, 24)
+	m = drive(t, m, key("down"), key("!"))
+	shortcut := m.modForm
+	m = drive(t, m, key("esc"), key("o"))
+	m.overlayT = 1
+	for i, item := range m.opts.menu.Items {
+		if item.Title == "Report post" {
+			m = clickOn(t, m, fmt.Sprintf("option:%d", i))
+			if m.overlay != ovModeration || m.modForm.action != shortcut.action || m.modForm.content != shortcut.content || m.modForm.target != shortcut.target {
+				t.Fatalf("menu target %+v differs from shortcut %+v", m.modForm.content, shortcut.content)
+			}
+			return
+		}
+	}
+	t.Fatal("post options are missing Report post")
+}
 
 func TestPostOptionsAndPlaceholders(t *testing.T) {
 	ctx := context.Background()

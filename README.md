@@ -11,6 +11,10 @@ games in the arcade — not your username either: `ssh alice@…` and `ssh bob@�
 with the same key are the same poster. The username is only used to suggest a
 handle the first time you connect.
 
+Open **Start here / introduce yourself** at the top of the Lobby for the
+community rules and an invitation to say hello. Posts and chat are public.
+Use **Contact staff** in the jump menu for a private message.
+
 ## Profiles and friends
 
 - Press `u` from the boards to search usernames. `Tab` switches between the directory and your private friends list.
@@ -109,8 +113,8 @@ staff can remove content or pin threads. Deleted and removed posts appear as
 placeholders in the conversation. Staff can lock a thread from its options
 to pause replies. The thread stays readable and shows the lock reason.
 
-Press `!` to report a post. Chat messages and other players' profiles have
-a Report action in their `o` menu. Use **Contact staff** in the `/` jump menu
+Choose **Report post** in its `o` menu or press `!`. Chat messages and other
+players' profiles also have a Report action. Use **Contact staff** in the `/` jump menu
 to send a private message or request review of a restriction. In chat, open
 the jump menu with `ctrl+k`.
 

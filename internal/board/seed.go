@@ -7,6 +7,22 @@ import (
 	"github.com/mynameis-nigel/ssh-bulletin/internal/store"
 )
 
+const welcomeTitle = "Start here / introduce yourself"
+
+const welcomeBody = `Welcome to the Bulletin. Reply with a short hello, what you like to play, or something you are making.
+
+## Community rules
+
+- Treat other players with respect. Harassment, threats, and hate are out.
+- Keep posts on topic and skip repeated messages, scams, and spam.
+- Posts and chat are public. Keep private information and SSH private keys to yourself.
+
+Use **Report** in a post, message, or profile's options to flag a problem. For a private note or a review request, open the jump menu with / or Ctrl+K and choose **Contact staff**.`
+
+func (s *Service) SeedWelcome(ctx context.Context) error {
+	return s.st.SeedWelcome(ctx, welcomeTitle, welcomeBody, s.now().Unix())
+}
+
 // SeedDemo fills an empty database with a few invented posters and threads
 // so the UI has something to render in local development. It does nothing
 // if any account already exists. Never enabled in production

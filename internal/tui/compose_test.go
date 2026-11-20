@@ -95,3 +95,16 @@ func TestNewThreadDraftUsesSelectedBoard(t *testing.T) {
 		t.Fatalf("posted thread = %+v, view board = %d, error = %v", thread, m.curBoard.ID, err)
 	}
 }
+
+func TestFirstPostComposerShowsPublicCue(t *testing.T) {
+	f := newChatFixture(t)
+	m := drive(t, modelFor(f.svc, f.alice, 80, 24), key("n"))
+	m.overlayT = 1
+	if text := screenText(m); !strings.Contains(text, "Posts are public to every arcade player.") {
+		t.Fatalf("first post cue:\n%s", text)
+	}
+	m = drive(t, m, tea.PasteMsg{Content: "Hello"}, key("tab"), tea.PasteMsg{Content: "First post"}, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	if m.acct.PostCount != 1 || m.overlay != ovNone {
+		t.Fatalf("first post result: count=%d, overlay=%v", m.acct.PostCount, m.overlay)
+	}
+}

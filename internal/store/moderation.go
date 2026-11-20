@@ -308,20 +308,21 @@ func (st *Store) SetPinned(ctx context.Context, actorID, threadID int64, pinned 
 		return 0, ErrForbidden
 	}
 	var boardID int64
-	err = tx.QueryRowContext(ctx, `SELECT t.board_id FROM threads t JOIN posts opening
+	var welcome bool
+	err = tx.QueryRowContext(ctx, `SELECT t.board_id, t.welcome FROM threads t JOIN posts opening
 		ON opening.id = (SELECT MIN(p.id) FROM posts p WHERE p.thread_id = t.id)
-		WHERE t.id = ? AND t.removed = 0 AND opening.deleted = 0`, threadID).Scan(&boardID)
+		WHERE t.id = ? AND t.removed = 0 AND opening.deleted = 0`, threadID).Scan(&boardID, &welcome)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, ErrNotFound
 	}
 	if err != nil {
 		return 0, err
 	}
-	if pinned {
+	if pinned && !welcome {
 		// Other threads only: pinning an already pinned thread stays harmless.
 		var others int
 		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM threads
-			WHERE board_id = ? AND pinned = 1 AND removed = 0 AND id != ?`, boardID, threadID).Scan(&others); err != nil {
+			WHERE board_id = ? AND pinned = 1 AND removed = 0 AND welcome = 0 AND id != ?`, boardID, threadID).Scan(&others); err != nil {
 			return 0, err
 		}
 		if others >= MaxPinned {

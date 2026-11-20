@@ -166,6 +166,9 @@ var migrations = []string{
 		thread_id INTEGER NOT NULL REFERENCES threads(id),
 		PRIMARY KEY (viewer_id, thread_id)
 	) WITHOUT ROWID;`,
+	// v10: track the installation's welcome thread independently of its title.
+	`ALTER TABLE threads ADD COLUMN welcome INTEGER NOT NULL DEFAULT 0;
+	CREATE UNIQUE INDEX one_welcome_thread ON threads (welcome) WHERE welcome = 1;`,
 }
 
 func (st *Store) migrate(ctx context.Context) error {

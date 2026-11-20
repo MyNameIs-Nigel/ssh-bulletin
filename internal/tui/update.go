@@ -273,6 +273,11 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		delete(c.drafts, msg.destination)
+		if m.acct != nil {
+			a := *m.acct
+			a.PostCount++
+			m.acct = &a
+		}
 		if m.overlay == ovCompose {
 			m.closeOverlay()
 			if m.screen != scrThread || m.curThread.ID != msg.threadID {
@@ -483,8 +488,7 @@ func (m *Model) globalKey(k tea.KeyPressMsg) (tea.Cmd, bool) {
 	case "m":
 		return m.openModeration(), true
 	case "?":
-		m.openOverlay(ovHelp)
-		return nil, true
+		return m.openHelp(), true
 	case "p":
 		m.openProfile()
 		return nil, true

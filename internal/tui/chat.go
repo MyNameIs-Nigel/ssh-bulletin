@@ -83,7 +83,7 @@ type chatWithdrawnMsg struct {
 func newChatInput() textinput.Model {
 	in := textinput.New()
 	in.Prompt = "› "
-	in.Placeholder = "Message the board…"
+	in.Placeholder = "Message the board · public to every arcade player"
 	in.CharLimit = board.MaxChatLen
 	return in
 }
@@ -816,9 +816,13 @@ func (m Model) viewChatSection(r rect) string {
 	for len(lines) < rows {
 		lines = append([]string{""}, lines...)
 	}
-	hint := kit.S(m.th.Faint).Render("tab to join the chat")
+	hintText := "Tab to focus · Enter to join"
+	if m.chatFocus {
+		hintText = "⏎ join the chat"
+	}
+	hint := kit.S(m.th.Faint).Render(hintText)
 	if lit := m.lit(chatSectionKey); m.chatFocus || lit {
-		hint = kit.Flow("⏎ join the chat", lipgloss.NewStyle().Bold(true), stops, lit, m.phase(), m.th)
+		hint = kit.Flow(hintText, lipgloss.NewStyle().Bold(true), stops, lit, m.phase(), m.th)
 	}
 	// The whole section is one hot spot: its teaser lines are not links.
 	return m.hot(chatSectionKey, func(m *Model) tea.Cmd {

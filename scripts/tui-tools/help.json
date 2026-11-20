@@ -1,6 +1,6 @@
 {
-  "cols": 110,
-  "rows": 36,
+  "cols": 80,
+  "rows": 24,
   "steps": [
     {
       "expect": "press any key"
@@ -19,7 +19,11 @@
       "expect": "Terminal RTT: [0-9]+ ms"
     },
     {
-      "wait_ms": 200
+      "send": "\u001b[6~",
+      "expect": "PUBLIC VISIBILITY"
+    },
+    {
+      "wait_ms": 4500
     }
   ]
 }

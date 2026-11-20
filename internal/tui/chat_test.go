@@ -121,6 +121,22 @@ func TestBoardChatSectionShowsTailAndFocus(t *testing.T) {
 	}
 }
 
+func TestChatHintAndMouseFocusAt80By24(t *testing.T) {
+	f := newChatFixture(t)
+	m := drive(t, modelFor(f.svc, f.alice, 80, 24), key("enter"))
+	if text := screenText(m); !strings.Contains(text, "Tab to focus · Enter to join") {
+		t.Fatalf("unfocused chat hint:\n%s", text)
+	}
+	m = clickOn(t, m, chatSectionKey)
+	if m.screen != scrBoard || !m.chatFocus {
+		t.Fatalf("first click changed screen=%v focus=%t", m.screen, m.chatFocus)
+	}
+	m = clickOn(t, m, chatSectionKey)
+	if text := screenText(m); m.screen != scrChat || !strings.Contains(text, "public to every arcade player") {
+		t.Fatalf("second click or first input cue:\n%s", text)
+	}
+}
+
 func TestChatSendAppearsAtBottom(t *testing.T) {
 	f := newChatFixture(t)
 	for i := range 40 {

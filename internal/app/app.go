@@ -68,6 +68,10 @@ func run() int {
 		}
 		logger.Warn("dev mode: demo content seeded into an empty database", "database", cfg.DBPath)
 	}
+	if err := svc.SeedWelcome(ctx); err != nil {
+		logger.Error("welcome thread setup failed", "error", err)
+		return 1
+	}
 
 	srv, err := server.New(cfg, logger, svc, identity.NewResolver(proxyKeys))
 	if err != nil {

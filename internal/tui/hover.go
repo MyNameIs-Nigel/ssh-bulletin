@@ -329,6 +329,10 @@ func hintPress(label string) (tea.KeyPressMsg, bool) {
 		return tea.KeyPressMsg{Code: tea.KeyEnter}, true
 	case "esc":
 		return tea.KeyPressMsg{Code: tea.KeyEscape}, true
+	case "↑":
+		return tea.KeyPressMsg{Code: tea.KeyUp}, true
+	case "↓":
+		return tea.KeyPressMsg{Code: tea.KeyDown}, true
 	case "tab":
 		return tea.KeyPressMsg{Code: tea.KeyTab}, true
 	case "ctrl+s":
