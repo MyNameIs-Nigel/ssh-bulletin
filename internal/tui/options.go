@@ -18,12 +18,43 @@ type optionsState struct {
 	thread     board.Thread
 	post       board.Post
 	chat       board.ChatMessage
+	profile    board.Account
 	removing   bool // confirming a staff removal of chat rather than a deletion
 	opening    bool
 	menu       kit.Menu
 	actions    []func(*Model) tea.Cmd
 	confirming bool
 	busy       bool
+}
+
+func (m *Model) openProfileOptions() {
+	a := m.userProfile.data.Account
+	if m.acct == nil || a.ID == 0 || a.ID == m.viewerID() {
+		return
+	}
+	m.opts = optionsState{profile: a, menu: kit.NewMenu(nil)}
+	m.opts.menu.Rows = 1
+	add := func(label string, run func(*Model) tea.Cmd) {
+		m.opts.menu.Items = append(m.opts.menu.Items, kit.Item{Title: label, Stops: m.accent()})
+		m.opts.actions = append(m.opts.actions, run)
+	}
+	add("Report profile", func(m *Model) tea.Cmd {
+		m.startContentReport(board.ModerationTarget{Kind: board.ProfileTarget, ID: a.ID}, "@"+a.Handle)
+		return nil
+	})
+	if m.canModerate() && a.Role != board.RoleOwner && (a.Role != board.RoleAdmin || m.isOwner()) {
+		for _, opt := range []struct {
+			label  string
+			action board.ModerationAction
+		}{{"Time out account", board.TimedOut}, {"Suspend account", board.Suspended}, {"Lift restriction", board.RestrictionLifted}} {
+			add(opt.label, func(m *Model) tea.Cmd {
+				m.startRestrictionForm(opt.action, a)
+				return nil
+			})
+		}
+	}
+	m.compose.lastShown = ovOptions
+	m.openOverlay(ovOptions)
 }
 
 type pinResultMsg struct {
@@ -227,6 +258,8 @@ func (m Model) viewOptions() string {
 	label, subject := "thread  ", m.opts.thread.Title
 	question, verb := "Permanently delete this "+postKind(m.opts.opening)+"?", "delete"
 	switch {
+	case m.opts.profile.ID != 0:
+		title, label, subject = "profile options", "player  ", "@"+m.opts.profile.Handle
 	case m.opts.chat.ID != 0:
 		title = "message options"
 		label, subject = m.opts.chat.AuthorHandle+"  ", m.opts.chat.Body

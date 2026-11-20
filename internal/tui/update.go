@@ -249,7 +249,7 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		c.busy = false
 		if msg.err != nil {
-			c.err = friendly(msg.err)
+			c.err = m.writeError(msg.err)
 			break
 		}
 		delete(c.drafts, msg.destination)
@@ -268,7 +268,10 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case kudosMsg:
 		if msg.err != nil {
-			m.setFlash(friendly(msg.err))
+			m.setFlash(m.writeError(msg.err))
+			if m.screen == scrThread {
+				cmds = append(cmds, m.loadPosts(m.curThread.ID, 0))
+			}
 		}
 
 	case deleteResultMsg:
@@ -294,17 +297,16 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.modForm.busy = false
-		if errors.Is(msg.err, board.ErrForbidden) {
-			m.leaveModeration()
-			cmds = append(cmds, m.refreshRole())
-			m.setFlash(friendly(msg.err))
-		} else if msg.err != nil {
+		if msg.err != nil {
 			m.modForm.err = friendly(msg.err)
+			if errors.Is(msg.err, board.ErrForbidden) && m.canModerate() {
+				cmds = append(cmds, m.refreshRole())
+			}
 		} else {
 			m.closeOverlay()
 			m.mod.detail = nil
 			m.toasts.Push(m.now(), msg.message, "", m.myStops())
-			if m.screen == scrThread && m.modForm.action == board.Removed {
+			if m.screen == scrThread && m.modForm.action == board.Removed && m.modForm.content.Kind == board.PostTarget {
 				cmds = append(cmds, m.onEvent(board.Event{Kind: board.EventModeration, ThreadID: m.curThread.ID, PostID: m.modForm.postID}))
 			} else {
 				cmds = append(cmds, m.loadModeration())
@@ -316,7 +318,9 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a := *m.acct
 			wasStaff := a.Role.CanModerate()
 			a.Role = msg.role
+			a.HandleChangeRequired = msg.rename
 			m.acct = &a
+			m.restriction = msg.restriction
 			if wasStaff != m.canModerate() && m.overlay == ovOptions && !m.opts.busy {
 				m.closeOverlay()
 			}
@@ -534,6 +538,10 @@ func (m *Model) onEvent(ev board.Event) tea.Cmd {
 		}
 	case board.EventReview:
 		cmds = append(cmds, m.loadModeration())
+	case board.EventRestriction:
+		if ev.AccountID == m.viewerID() {
+			cmds = append(cmds, m.refreshRole())
+		}
 	case board.EventChat:
 		// Chat never toasts: it would bury every other notice. The board
 		// section and chat screen show it as it arrives.
@@ -541,6 +549,7 @@ func (m *Model) onEvent(ev board.Event) tea.Cmd {
 			cmds = append(cmds, m.refreshChat())
 		}
 	case board.EventChatRemoved:
+		cmds = append(cmds, m.loadModeration())
 		if m.overlay == ovOptions && m.opts.chat.ID == ev.MessageID && !m.opts.busy {
 			m.closeOverlay()
 		}
@@ -564,6 +573,9 @@ func (m *Model) onEvent(ev board.Event) tea.Cmd {
 		}
 	case board.EventProfile:
 		cmds = append(cmds, m.loadHome())
+		if ev.AccountID == m.viewerID() {
+			cmds = append(cmds, m.refreshRole())
+		}
 		if m.screen == scrThread {
 			cmds = append(cmds, m.loadPosts(m.curThread.ID, 0))
 		}
@@ -677,12 +689,25 @@ func (m *Model) setFlash(s string) {
 }
 
 // friendly turns errors into short sentences for the UI.
+func (m *Model) writeError(err error) string {
+	var restricted *board.AccountRestriction
+	if errors.As(err, &restricted) {
+		m.restriction = restricted
+	}
+	return friendly(err)
+}
+
 func friendly(err error) string {
+	var restricted *board.AccountRestriction
+	if errors.As(err, &restricted) {
+		return "Account " + string(restricted.Kind) + ". Use Contact staff in the jump menu."
+	}
 	for _, known := range []error{board.ErrHandleInvalid, board.ErrHandleTaken, board.ErrEmptyTitle,
 		board.ErrEmptyBody, board.ErrTooLong, board.ErrNoAccount, board.ErrNotFound,
 		board.ErrForbidden, board.ErrInvalidFingerprint, board.ErrKeyMismatch, board.ErrOwnerRole,
 		board.ErrReasonRequired, board.ErrAlreadyReported, board.ErrReviewChanged, board.ErrPostLimit,
-		board.ErrNewcomerLimit, board.ErrReportLimit, board.ErrPinLimit, board.ErrFlairInvalid, board.ErrSelfFriend, board.ErrChatLimit} {
+		board.ErrNewcomerLimit, board.ErrReportLimit, board.ErrPinLimit, board.ErrFlairInvalid, board.ErrSelfFriend, board.ErrChatLimit,
+		board.ErrHandleChangeRequired, board.ErrContactLimit, board.ErrRestrictionDuration} {
 		if errors.Is(err, known) {
 			return known.Error()
 		}

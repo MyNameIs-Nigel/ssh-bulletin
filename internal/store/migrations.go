@@ -114,6 +114,36 @@ var migrations = []string{
 	CREATE INDEX chat_board_order ON chat_messages (board_id, id);
 	CREATE INDEX chat_author_time ON chat_messages (author_id, created_at);
 	CREATE INDEX chat_time ON chat_messages (created_at);`,
+	// v7: report targets, preserved evidence, and account restrictions.
+	`ALTER TABLE moderation_log RENAME TO post_moderation_log;
+	CREATE TABLE moderation_log (
+		id INTEGER PRIMARY KEY,
+		target_kind TEXT NOT NULL,
+		target_id INTEGER NOT NULL,
+		actor_id INTEGER NOT NULL REFERENCES accounts(id),
+		action TEXT NOT NULL,
+		reason TEXT NOT NULL,
+		created_at INTEGER NOT NULL,
+		resolved INTEGER NOT NULL DEFAULT 0,
+		title TEXT NOT NULL DEFAULT '',
+		author TEXT NOT NULL DEFAULT '',
+		body TEXT NOT NULL DEFAULT '',
+		expires_at INTEGER NOT NULL DEFAULT 0
+	);
+	INSERT INTO moderation_log (id, target_kind, target_id, actor_id, action, reason, created_at, resolved)
+		SELECT id, 'post', post_id, actor_id, action, reason, created_at, resolved FROM post_moderation_log;
+	DROP TABLE post_moderation_log;
+	CREATE UNIQUE INDEX moderation_one_report ON moderation_log (target_kind, target_id, actor_id)
+		WHERE action = 'reported' AND target_kind IN ('post', 'chat');
+	CREATE INDEX moderation_report_rate ON moderation_log (actor_id, created_at) WHERE action = 'reported';
+	CREATE INDEX moderation_pending ON moderation_log (target_kind, target_id, id) WHERE action = 'reported' AND resolved = 0;
+	CREATE INDEX moderation_removals ON moderation_log (target_kind, target_id, id) WHERE action = 'removed';
+	CREATE TABLE account_restrictions (
+		account_id INTEGER PRIMARY KEY REFERENCES accounts(id),
+		log_id INTEGER NOT NULL REFERENCES moderation_log(id),
+		expires_at INTEGER NOT NULL
+	);
+	ALTER TABLE accounts ADD COLUMN handle_change_required INTEGER NOT NULL DEFAULT 0;`,
 }
 
 func (st *Store) migrate(ctx context.Context) error {

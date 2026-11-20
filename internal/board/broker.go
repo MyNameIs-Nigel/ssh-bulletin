@@ -15,6 +15,7 @@ const (
 	EventModeration                       // a thread or post changed visibility
 	EventChat                             // a live chat message was sent
 	EventChatRemoved                      // a live chat message was deleted or removed
+	EventRestriction                      // an account's write restriction changed
 )
 
 // Event is broadcast to every live session so screens refresh in place.

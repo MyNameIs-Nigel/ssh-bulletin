@@ -254,6 +254,10 @@ func (m *Model) updateUserProfile(k tea.KeyPressMsg) tea.Cmd {
 		if u.data.ID == m.viewerID() {
 			m.openProfile()
 		}
+	case "o":
+		m.openProfileOptions()
+	case "/", "ctrl+k":
+		m.openPalette()
 	case "f":
 		viewer := m.viewerID()
 		if u.saving || u.data.ID == 0 || viewer == u.id {

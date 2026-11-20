@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/mynameis-nigel/ssh-bulletin/internal/identity"
@@ -11,20 +12,32 @@ import (
 )
 
 type (
-	Role             = store.Role
-	ModerationAction = store.ModerationAction
-	ModerationView   = store.ModerationView
-	ModerationEntry  = store.ModerationEntry
+	Role               = store.Role
+	ModerationAction   = store.ModerationAction
+	ModerationView     = store.ModerationView
+	ModerationEntry    = store.ModerationEntry
+	ModerationTarget   = store.ModerationTarget
+	AccountRestriction = store.AccountRestriction
 )
 
 const (
 	RoleOwner = store.RoleOwner
 	RoleAdmin = store.RoleAdmin
 
-	Reported  = store.Reported
-	Dismissed = store.Dismissed
-	Removed   = store.Removed
-	Restored  = store.Restored
+	Reported             = store.Reported
+	Dismissed            = store.Dismissed
+	Removed              = store.Removed
+	Restored             = store.Restored
+	BioCleared           = store.BioCleared
+	HandleChangeRequired = store.HandleChangeRequired
+	TimedOut             = store.TimedOut
+	Suspended            = store.Suspended
+	RestrictionLifted    = store.RestrictionLifted
+
+	PostTarget    = store.PostTarget
+	ChatTarget    = store.ChatTarget
+	ProfileTarget = store.ProfileTarget
+	ContactTarget = store.ContactTarget
 
 	QueueView   = store.QueueView
 	HistoryView = store.HistoryView
@@ -36,17 +49,20 @@ const (
 )
 
 var (
-	ErrForbidden          = store.ErrForbidden
-	ErrInvalidFingerprint = errors.New("enter the full SHA256 fingerprint from the player's profile")
-	ErrKeyMismatch        = store.ErrKeyMismatch
-	ErrOwnerRole          = store.ErrOwnerRole
-	ErrReasonRequired     = errors.New("enter a reason")
-	ErrAlreadyReported    = store.ErrAlreadyReported
-	ErrReviewChanged      = store.ErrReviewChanged
-	ErrPostLimit          = store.ErrPostLimit
-	ErrNewcomerLimit      = store.ErrNewcomerLimit
-	ErrReportLimit        = store.ErrReportLimit
-	ErrPinLimit           = store.ErrPinLimit
+	ErrForbidden            = store.ErrForbidden
+	ErrInvalidFingerprint   = errors.New("enter the full SHA256 fingerprint from the player's profile")
+	ErrKeyMismatch          = store.ErrKeyMismatch
+	ErrOwnerRole            = store.ErrOwnerRole
+	ErrReasonRequired       = errors.New("enter a reason")
+	ErrAlreadyReported      = store.ErrAlreadyReported
+	ErrReviewChanged        = store.ErrReviewChanged
+	ErrPostLimit            = store.ErrPostLimit
+	ErrNewcomerLimit        = store.ErrNewcomerLimit
+	ErrReportLimit          = store.ErrReportLimit
+	ErrPinLimit             = store.ErrPinLimit
+	ErrHandleChangeRequired = store.ErrHandleChangeRequired
+	ErrContactLimit         = store.ErrContactLimit
+	ErrRestrictionDuration  = errors.New("enter a duration between 1m and 8760h, such as 30m or 24h")
 )
 
 // ConfigureOwner applies the operator's optional initial key reservation.
@@ -73,7 +89,7 @@ func (s *Service) SetAdmin(ctx context.Context, actorID int64, handle, fp string
 	if !identity.ValidFingerprint(fp) {
 		return Account{}, ErrInvalidFingerprint
 	}
-	target, err := s.st.SetAdmin(ctx, actorID, handle, fp, grant)
+	target, err := s.st.SetAdmin(ctx, actorID, handle, fp, grant, s.now().Unix())
 	if errors.Is(err, store.ErrNotFound) {
 		return Account{}, ErrNotFound
 	}
@@ -92,17 +108,86 @@ func (s *Service) ModerationPage(ctx context.Context, actorID int64, view Modera
 }
 
 func (s *Service) Report(ctx context.Context, actorID, postID int64, reason string) error {
+	return s.ReportContent(ctx, actorID, ModerationTarget{Kind: PostTarget, ID: postID}, reason)
+}
+
+func (s *Service) ReportContent(ctx context.Context, actorID int64, target ModerationTarget, reason string) error {
 	if actorID == 0 {
 		return ErrNoAccount
+	}
+	if target.Kind != PostTarget && target.Kind != ChatTarget && target.Kind != ProfileTarget {
+		return ErrNotFound
 	}
 	reason, err := moderationReason(reason)
 	if err != nil {
 		return err
 	}
-	err = s.st.Report(ctx, actorID, postID, reason, s.now().Unix())
+	err = s.st.Report(ctx, actorID, target, reason, s.now().Unix())
 	if errors.Is(err, store.ErrNotFound) {
 		return ErrNotFound
 	}
+	if err == nil {
+		s.broker.Publish(Event{Kind: EventReview})
+	}
+	return err
+}
+
+func (s *Service) ReviewReport(ctx context.Context, actorID, reportID int64, action ModerationAction, reason string) error {
+	reason, err := moderationReason(reason)
+	if err != nil {
+		return err
+	}
+	target, boardID, err := s.st.ReviewReport(ctx, actorID, reportID, action, reason, s.now().Unix())
+	if errors.Is(err, store.ErrNotFound) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	switch action {
+	case Removed:
+		s.broker.Publish(Event{Kind: EventChatRemoved, MessageID: target.ID, BoardID: boardID})
+		return nil
+	case BioCleared, HandleChangeRequired:
+		s.broker.Publish(Event{Kind: EventProfile, AccountID: target.ID})
+	}
+	s.broker.Publish(Event{Kind: EventReview})
+	return nil
+}
+
+func (s *Service) AccountRestriction(ctx context.Context, id int64) (*AccountRestriction, error) {
+	return s.st.AccountRestriction(ctx, id, s.now().Unix())
+}
+
+func (s *Service) SetRestriction(ctx context.Context, actorID, targetID int64, action ModerationAction, reason string, duration time.Duration) error {
+	reason, err := moderationReason(reason)
+	if err != nil {
+		return err
+	}
+	if action != RestrictionLifted && (duration < time.Minute || duration > 365*24*time.Hour) {
+		return ErrRestrictionDuration
+	}
+	now := s.now()
+	err = s.st.SetRestriction(ctx, actorID, targetID, action, reason, now.Unix(), now.Add(duration).Unix())
+	if err == nil {
+		s.broker.Publish(Event{Kind: EventRestriction, AccountID: targetID})
+		s.broker.Publish(Event{Kind: EventReview})
+	}
+	return err
+}
+
+func (s *Service) ContactStaff(ctx context.Context, actorID int64, message string) error {
+	if actorID == 0 {
+		return ErrNoAccount
+	}
+	body := CleanLine(message)
+	if body == "" {
+		return ErrEmptyBody
+	}
+	if utf8.RuneCountInString(body) > MaxChatLen {
+		return ErrTooLong
+	}
+	err := s.st.ContactStaff(ctx, actorID, body, s.now().Unix())
 	if err == nil {
 		s.broker.Publish(Event{Kind: EventReview})
 	}
@@ -143,7 +228,7 @@ func moderationReason(reason string) (string, error) {
 // SetPinned pins a thread to the top of its board, or releases it. Only
 // admins and the owner may; the store enforces that.
 func (s *Service) SetPinned(ctx context.Context, actorID, threadID int64, pinned bool) error {
-	boardID, err := s.st.SetPinned(ctx, actorID, threadID, pinned)
+	boardID, err := s.st.SetPinned(ctx, actorID, threadID, pinned, s.now().Unix())
 	if errors.Is(err, store.ErrNotFound) {
 		return ErrNotFound
 	}

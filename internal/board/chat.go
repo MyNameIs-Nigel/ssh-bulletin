@@ -69,7 +69,7 @@ func (s *Service) DeleteChat(ctx context.Context, actorID, id int64) error {
 	if actorID == 0 {
 		return ErrNoAccount
 	}
-	boardID, err := s.st.DeleteChat(ctx, actorID, id)
+	boardID, err := s.st.DeleteChat(ctx, actorID, id, s.now().Unix())
 	return s.chatRemoved(boardID, id, err)
 }
 

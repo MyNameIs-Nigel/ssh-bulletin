@@ -474,7 +474,7 @@ func (m *Model) receiveChatSent(msg chatSentMsg) tea.Cmd {
 	}
 	c.sending = false
 	if msg.err != nil {
-		c.err = friendly(msg.err) // keep the draft so it can be sent again
+		c.err = m.writeError(msg.err) // keep the draft so it can be sent again
 		return nil
 	}
 	c.input.Reset()
@@ -509,6 +509,12 @@ func (m *Model) openChatOptions() {
 	} else if m.canModerate() {
 		add("Remove message", func(m *Model) tea.Cmd {
 			m.opts.confirming, m.opts.removing = true, true
+			return nil
+		})
+	}
+	if m.acct != nil {
+		add("Report message", func(m *Model) tea.Cmd {
+			m.startContentReport(board.ModerationTarget{Kind: board.ChatTarget, ID: msg.ID}, "@"+msg.AuthorHandle)
 			return nil
 		})
 	}

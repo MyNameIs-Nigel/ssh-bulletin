@@ -71,8 +71,9 @@ type Model struct {
 	h   int
 	now func() time.Time
 
-	acct   *board.Account
-	screen screen
+	acct        *board.Account
+	screen      screen
+	restriction *board.AccountRestriction
 
 	// Accent cross-fade between places (brand → board palette → ...).
 	accentFrom []color.Color
@@ -221,7 +222,7 @@ func (m Model) myStops() []color.Color {
 
 // Init starts the event listener, the clock, and the splash animation.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{waitEvent(m.d.Events), m.clockTick(), m.loadHome(), m.loadFriends()}
+	cmds := []tea.Cmd{waitEvent(m.d.Events), m.clockTick(), m.loadHome(), m.loadFriends(), m.loadAccountStatus()}
 	if m.screen == scrSplash || m.screen == scrOnboard {
 		cmds = append(cmds, kit.Frame(m.gen))
 	}
