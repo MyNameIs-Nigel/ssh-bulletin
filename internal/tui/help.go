@@ -64,7 +64,7 @@ func (m Model) helpLines(w int) []string {
 		title string
 		keys  []kit.Hint
 	}{
-		{"navigation", []kit.Hint{{"/ ctrl+k", "jump menu"}, {"u", "user directory"}, {"p", "edit your profile"}, {"i", "inbox from Boards"}, {"esc", "back"}, {"ctrl+c", "leave"}}},
+		{"navigation", []kit.Hint{{"/ ctrl+k", "jump menu"}, {"u", "user directory"}, {"p", "edit your profile"}, {"i", "inbox from Boards"}, {"s", "search from Boards"}, {"esc", "back"}, {"ctrl+c", "leave"}}},
 		{"boards", []kit.Hint{{"↑↓ j k", "move"}, {"⏎ → l", "open"}, {"g G", "top / bottom"}, {"n", "new thread"}, {"o", "thread options"}, {"tab", "focus chat, then Enter"}}},
 		{"threads", []kit.Hint{{"↑↓", "post by post"}, {"tab", "links in post"}, {"o", "post options"}, {"r ⏎", "reply"}, {"f +", "kudos"}, {"!", "report"}, {"z", "reveal a muted post"}}},
 		{"writing", []kit.Hint{{"ctrl+s", "post"}, {"tab", "title ↔ body"}, {"esc", "save draft"}, {"ctrl+x", "discard draft"}, {"⏎", "send in chat"}, {"tab", "chat: pick message"}}},

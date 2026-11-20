@@ -49,7 +49,7 @@ func (m *Model) updateThread(k tea.KeyPressMsg) tea.Cmd {
 			return m.follow(links[m.linkSel])
 		}
 		if len(m.posts) > 0 {
-			m.openCompose(composeReply)
+			return m.openCompose(composeReply)
 		}
 		return nil
 	}
@@ -78,7 +78,7 @@ func (m *Model) updateThread(k tea.KeyPressMsg) tea.Cmd {
 		m.postTop = max(0, m.postTop-m.threadRect().h/2)
 	case "r":
 		if len(m.posts) > 0 {
-			m.openCompose(composeReply)
+			return m.openCompose(composeReply)
 		}
 	case "z":
 		if m.postCursor < len(m.posts) {
@@ -171,6 +171,9 @@ func (m Model) postCard(p board.Post, idx, iw int, selected bool) []string {
 	}
 	name += postFlair(p.Flair, astops)
 	when := kit.S(m.th.Muted).Render(" · " + kit.Ago(p.CreatedAt, m.now()))
+	if p.EditedAt != 0 && p.Placeholder() == "" {
+		when += kit.S(m.th.Muted).Render(" · edited")
+	}
 	bodyW := iw - postHeaderOffset
 	head := name + when
 	if p.Placeholder() == "" {

@@ -25,9 +25,9 @@ Use **Contact staff** in the jump menu for a private message.
 
 ## Formatting and links
 
-In the post composer, `esc` saves a draft for the current SSH session. Reopen
-the composer on the same board or thread to resume it. `ctrl+x` discards the
-draft after confirmation, and `ctrl+s` posts it.
+New-thread and reply drafts autosave as you type. Reopen the composer on
+the same board or thread after reconnecting. `esc` saves and closes it, `ctrl+x`
+discards it after confirmation, and `ctrl+s` posts it.
 
 Posts and chat take light Markdown: `**bold**`, `*italic*`, `` `code` ``,
 `~~strike~~`, `- lists`, `1. lists`, `> quotes`, headings and fenced code.
@@ -39,6 +39,13 @@ They also take links:
 - With a mouse, links, names, list rows, breadcrumbs and the key hints in the footer all light up under the pointer, and a click does what the key would.
 
 See [docs/04-rich-text-and-hover.md](docs/04-rich-text-and-hover.md) for the full syntax and how hover works.
+
+Press `s` from Boards to search thread titles and post text. Open a result
+to jump to the matching post. Press `esc` to return to the results.
+
+Choose **Edit opening post** or **Edit reply** from your own post's options.
+Saved changes display an `edited` indicator. Staff can review previous
+versions in Moderation History.
 
 ## Inbox
 

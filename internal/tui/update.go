@@ -272,7 +272,6 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			c.err = m.writeError(msg.err)
 			break
 		}
-		delete(c.drafts, msg.destination)
 		if m.acct != nil {
 			a := *m.acct
 			a.PostCount++
@@ -290,6 +289,13 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 		c.reset()
 		cmds = append(cmds, m.loadHome())
 		m.toasts.Push(m.now(), "Posted", "", m.myStops())
+
+	case draftLoadedMsg:
+		cmds = append(cmds, m.receiveDraft(msg))
+	case draftSavedMsg:
+		m.receiveDraftSaved(msg)
+	case editSavedMsg:
+		cmds = append(cmds, m.receiveEditSaved(msg))
 
 	case kudosMsg:
 		if msg.err != nil {
@@ -320,6 +326,8 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.receiveInboxOpened(msg))
 	case inboxMuteMsg:
 		cmds = append(cmds, m.receiveInboxMute(msg))
+	case searchLoadedMsg:
+		m.receiveSearch(msg)
 
 	case moderationPageMsg:
 		cmds = append(cmds, m.receiveModerationPage(msg))
@@ -440,6 +448,8 @@ func (m *Model) routeInput(msg tea.Msg) tea.Cmd {
 		return m.updateDirectory(msg)
 	case scrInbox:
 		return m.updateInbox(msg)
+	case scrSearch:
+		return m.updateSearch(msg)
 	case scrChat:
 		// The input has the keyboard: q, / and friends are text here.
 		return m.updateChat(msg)
@@ -616,6 +626,9 @@ func (m *Model) onEvent(ev board.Event) tea.Cmd {
 		delete(m.previews, ev.ThreadID)
 		clear(m.peek)
 		cmds = append(cmds, m.loadModeration(), m.loadHome(), m.refreshInbox())
+		if m.screen == scrSearch && m.search.query != "" {
+			cmds = append(cmds, m.runSearch(m.search.page))
+		}
 		if m.screen == scrThread {
 			cmds = append(cmds, m.loadPosts(m.curThread.ID, 0))
 		}
@@ -699,6 +712,7 @@ func (m *Model) enterBoard(b board.Board) tea.Cmd {
 func (m *Model) enterThread(t board.Thread, focus int64) tea.Cmd {
 	m.curThread = t
 	m.threadMuted, m.threadFromInbox = false, false
+	m.threadFromSearch = false
 	m.revealedPosts = nil
 	m.screen = scrThread
 	m.posts = nil
@@ -722,6 +736,13 @@ func (m *Model) openProfile() {
 func (m *Model) back() tea.Cmd {
 	switch m.screen {
 	case scrThread:
+		if m.threadFromSearch {
+			m.threadFromSearch = false
+			m.screen = scrSearch
+			m.setAccent(m.th.Brand.Stops)
+			m.touchFocus()
+			return m.runSearch(m.search.page)
+		}
 		if m.threadFromInbox {
 			m.threadFromInbox = false
 			return m.showInbox()
@@ -764,7 +785,8 @@ func friendly(err error) string {
 		board.ErrForbidden, board.ErrInvalidFingerprint, board.ErrKeyMismatch, board.ErrOwnerRole,
 		board.ErrReasonRequired, board.ErrAlreadyReported, board.ErrReviewChanged, board.ErrPostLimit,
 		board.ErrNewcomerLimit, board.ErrReportLimit, board.ErrPinLimit, board.ErrFlairInvalid, board.ErrSelfFriend, board.ErrChatLimit,
-		board.ErrHandleChangeRequired, board.ErrContactLimit, board.ErrRestrictionDuration, board.ErrThreadLocked, board.ErrSelfMute, board.ErrReplyTarget} {
+		board.ErrHandleChangeRequired, board.ErrContactLimit, board.ErrRestrictionDuration, board.ErrThreadLocked, board.ErrSelfMute, board.ErrReplyTarget,
+		board.ErrEditChanged, board.ErrDraftChanged} {
 		if errors.Is(err, known) {
 			return known.Error()
 		}

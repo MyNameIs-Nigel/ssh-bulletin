@@ -97,6 +97,8 @@ type Post struct {
 	KudosByViewer bool
 	Removed       bool
 	Deleted       bool
+	EditedAt      int64
+	Revision      int64
 }
 
 // Placeholder describes a post whose original body is unavailable.
@@ -301,7 +303,7 @@ func (st *Store) Posts(ctx context.Context, threadID, viewer int64) ([]Post, err
 		SELECT p.id, p.thread_id, p.author_id, a.handle, a.palette, a.fingerprint, CASE WHEN p.removed = 0 THEN p.flair ELSE '' END,
 		  CASE WHEN p.removed = 0 THEN p.body ELSE '' END, p.created_at, p.removed, p.deleted,
 		  (SELECT COUNT(*) FROM kudos k WHERE k.post_id = p.id),
-		  EXISTS(SELECT 1 FROM kudos k WHERE k.post_id = p.id AND k.account_id = ?), `+roleSQL+`
+		  EXISTS(SELECT 1 FROM kudos k WHERE k.post_id = p.id AND k.account_id = ?), `+roleSQL+`, p.edited_at, p.revision
 		FROM posts p JOIN accounts a ON a.id = p.author_id
 		WHERE p.thread_id = ? ORDER BY p.id`, viewer, threadID)
 	if err != nil {
@@ -312,7 +314,7 @@ func (st *Store) Posts(ctx context.Context, threadID, viewer int64) ([]Post, err
 	for rows.Next() {
 		var p Post
 		if err := rows.Scan(&p.ID, &p.ThreadID, &p.AuthorID, &p.AuthorHandle, &p.AuthorPalette, &p.AuthorKey, &p.Flair, &p.Body,
-			&p.CreatedAt, &p.Removed, &p.Deleted, &p.Kudos, &p.KudosByViewer, &p.AuthorRole); err != nil {
+			&p.CreatedAt, &p.Removed, &p.Deleted, &p.Kudos, &p.KudosByViewer, &p.AuthorRole, &p.EditedAt, &p.Revision); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -321,7 +323,7 @@ func (st *Store) Posts(ctx context.Context, threadID, viewer int64) ([]Post, err
 }
 
 // CreateThread inserts a thread and its opening post in one transaction.
-func (st *Store) CreateThread(ctx context.Context, boardID, authorID int64, title, body string, now int64, mentions []string) (int64, int64, error) {
+func (st *Store) CreateThread(ctx context.Context, boardID, authorID int64, title, body string, now int64, mentions []string, draftRevision int64) (int64, int64, error) {
 	tx, err := st.beginAccountWrite(ctx, authorID, now)
 	if err != nil {
 		return 0, 0, err
@@ -345,6 +347,9 @@ func (st *Store) CreateThread(ctx context.Context, boardID, authorID int64, titl
 	if err := addInboxActivity(ctx, tx, tid, pid, authorID, 0, false, mentions); err != nil {
 		return 0, 0, err
 	}
+	if err := clearPostedDraft(ctx, tx, authorID, DraftKey{BoardID: boardID}, draftRevision); err != nil {
+		return 0, 0, err
+	}
 	return tid, pid, tx.Commit()
 }
 
@@ -354,15 +359,16 @@ const insertPost = `INSERT INTO posts (thread_id, author_id, body, created_at, f
 	VALUES (?, ?, ?, ?, (SELECT flair FROM accounts WHERE id = ?))`
 
 // Reply appends a post, bumps the thread activity, and returns the ID and current thread title.
-func (st *Store) Reply(ctx context.Context, threadID, authorID, replyTo int64, body string, now int64, mentions []string) (int64, string, error) {
+func (st *Store) Reply(ctx context.Context, threadID, authorID, replyTo int64, body string, now int64, mentions []string, draftRevision int64) (int64, string, error) {
 	tx, err := st.beginAccountWrite(ctx, authorID, now)
 	if err != nil {
 		return 0, "", err
 	}
 	defer func() { _ = tx.Rollback() }()
 	var title string
+	var boardID int64
 	err = tx.QueryRowContext(ctx, `UPDATE threads SET last_post_at = max(last_post_at, ?)
-		WHERE id = ? AND removed = 0 AND lock_reason = '' RETURNING title`, now, threadID).Scan(&title)
+		WHERE id = ? AND removed = 0 AND lock_reason = '' RETURNING title, board_id`, now, threadID).Scan(&title, &boardID)
 	if errors.Is(err, sql.ErrNoRows) {
 		var locked bool
 		if lookupErr := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM threads WHERE id = ? AND removed = 0 AND lock_reason != '')`, threadID).Scan(&locked); lookupErr != nil {
@@ -395,6 +401,9 @@ func (st *Store) Reply(ctx context.Context, threadID, authorID, replyTo int64, b
 	}
 	pid, _ := res.LastInsertId()
 	if err := addInboxActivity(ctx, tx, threadID, pid, authorID, replyTo, true, mentions); err != nil {
+		return 0, "", err
+	}
+	if err := clearPostedDraft(ctx, tx, authorID, DraftKey{BoardID: boardID, ThreadID: threadID}, draftRevision); err != nil {
 		return 0, "", err
 	}
 	return pid, title, tx.Commit()

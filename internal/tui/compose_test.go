@@ -19,11 +19,11 @@ func TestComposeDraftsStayWithTheirThreads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.openCompose(composeReply)
+	m = drive(t, m, key("r"))
 	m.compose.body.SetValue("For the first thread")
 	m.overlayT = 1
 	m = clickOn(t, m, "compose:hint:esc")
-	if m.overlay != ovNone || m.flash != "Draft saved for this session" {
+	if m.overlay != ovNone || m.flash != "Draft saved" {
 		t.Fatalf("save and close: overlay=%v, feedback=%q", m.overlay, m.flash)
 	}
 	m = drive(t, m, m.enterThread(second, 0)(), key("r"))

@@ -70,8 +70,7 @@ func (m *Model) updateBoard(k tea.KeyPressMsg) tea.Cmd {
 		m.focusChatSection(!m.chatFocus)
 		return nil
 	case "n":
-		m.openCompose(composeThread)
-		return nil
+		return m.openCompose(composeThread)
 	}
 	if m.chatFocus {
 		switch k.String() {

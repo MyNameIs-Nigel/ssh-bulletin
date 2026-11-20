@@ -49,6 +49,7 @@ const (
 	scrUserProfile
 	scrChat
 	scrInbox
+	scrSearch
 )
 
 type overlayKind int
@@ -96,22 +97,23 @@ type Model struct {
 	idleInhale bool
 
 	// Data.
-	stats           board.Stats
-	boards          []board.Board
-	boardMenu       kit.Menu
-	curBoard        board.Board
-	threads         []board.Thread
-	threadMenu      kit.Menu
-	previews        map[int64][]board.Post   // board screen: opening posts by thread
-	peek            map[int64][]board.Thread // home screen: recent threads by board
-	curThread       board.Thread
-	threadMuted     bool
-	threadFromInbox bool
-	posts           []board.Post
-	postCursor      int
-	postTop         int // first visible line of the thread view
-	loading         bool
-	contentVersion  int // invalidates reads started before a visibility change
+	stats            board.Stats
+	boards           []board.Board
+	boardMenu        kit.Menu
+	curBoard         board.Board
+	threads          []board.Thread
+	threadMenu       kit.Menu
+	previews         map[int64][]board.Post   // board screen: opening posts by thread
+	peek             map[int64][]board.Thread // home screen: recent threads by board
+	curThread        board.Thread
+	threadMuted      bool
+	threadFromInbox  bool
+	threadFromSearch bool
+	posts            []board.Post
+	postCursor       int
+	postTop          int // first visible line of the thread view
+	loading          bool
+	contentVersion   int // invalidates reads started before a visibility change
 
 	// Live chat of the board in view, and whether the board screen's chat
 	// section (rather than its thread list) has focus.
@@ -131,13 +133,15 @@ type Model struct {
 	friendsRequest int
 	socialRequest  int
 
-	mod          moderationState
-	modForm      moderationForm
-	opts         optionsState
-	modRequest   int
-	roleRequest  int
-	inbox        inboxState
-	inboxRequest int
+	mod           moderationState
+	modForm       moderationForm
+	opts          optionsState
+	modRequest    int
+	roleRequest   int
+	inbox         inboxState
+	inboxRequest  int
+	search        searchState
+	searchRequest int
 
 	// Overlays.
 	overlay  overlayKind

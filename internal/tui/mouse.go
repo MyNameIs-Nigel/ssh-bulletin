@@ -44,6 +44,14 @@ func (m *Model) onWheel(msg tea.MouseWheelMsg) tea.Cmd {
 				return m.pageInbox(d)
 			}
 		}
+	case scrSearch:
+		if m.search.focusedResults && !m.search.loading {
+			if m.search.menu.Move(d) {
+				m.search.menu.Snap()
+			} else if (d > 0 && m.search.more) || (d < 0 && m.search.page > 0) {
+				return m.runSearch(m.search.page + d)
+			}
+		}
 	}
 	return nil
 }
