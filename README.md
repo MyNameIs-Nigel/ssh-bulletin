@@ -36,6 +36,16 @@ They also take links:
 
 See [docs/04-rich-text-and-hover.md](docs/04-rich-text-and-hover.md) for the full syntax and how hover works.
 
+## Inbox
+
+Press `i` from Boards to open your inbox. It groups replies to your threads,
+direct replies made with **Reply linking this post**, and `@handle` mentions
+in forum posts. Open a thread group and select an entry to jump to that post
+and mark it read. Unread counts survive reconnects.
+
+Press `m` in the inbox to mute a thread. Use the thread's `o` menu to unmute
+it. Activity from muted players and muted threads does not alert you.
+
 ## Live chat
 
 Every board has a live chat under its thread list.

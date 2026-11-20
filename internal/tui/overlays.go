@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -96,12 +97,14 @@ type composeDestination struct {
 
 type composeDraft struct {
 	title, body string
+	replyTo     int64
 }
 
 type composeState struct {
 	destination composeDestination
 	board       board.Board
 	thread      board.Thread
+	replyTo     int64
 	drafts      map[composeDestination]composeDraft
 	title       textinput.Model
 	body        textarea.Model
@@ -135,6 +138,7 @@ func (c *composeState) reset() {
 	c.title.Reset()
 	c.body.Reset()
 	c.err, c.busy, c.discarding = "", false, false
+	c.replyTo = 0
 }
 
 func (m *Model) openCompose(mode composeMode) {
@@ -175,6 +179,7 @@ func (m *Model) openCompose(mode composeMode) {
 	draft := c.drafts[c.destination]
 	c.title.SetValue(draft.title)
 	c.body.SetValue(draft.body)
+	c.replyTo = draft.replyTo
 	c.lastShown = ovCompose
 	c.resize(m.w, m.h)
 	stops := m.myStops()
@@ -220,8 +225,8 @@ func (m *Model) updateCompose(msg tea.Msg) tea.Cmd {
 	if k, ok := msg.(tea.KeyPressMsg); ok {
 		switch k.String() {
 		case "esc":
-			draft := composeDraft{title: c.title.Value(), body: c.body.Value()}
-			if draft == (composeDraft{}) {
+			draft := composeDraft{title: c.title.Value(), body: c.body.Value(), replyTo: c.replyTo}
+			if draft.title == "" && draft.body == "" {
 				delete(c.drafts, c.destination)
 			} else {
 				c.drafts[c.destination] = draft
@@ -264,7 +269,7 @@ func (m *Model) submitCompose() tea.Cmd {
 		return nil
 	}
 	acct, d := *m.acct, m.d
-	destination, t := c.destination, c.thread
+	destination, t, replyTo := c.destination, c.thread, c.replyTo
 	title, body := c.title.Value(), c.body.Value()
 	if strings.TrimSpace(body) == "" {
 		c.err = board.ErrEmptyBody.Error()
@@ -282,7 +287,7 @@ func (m *Model) submitCompose() tea.Cmd {
 		}
 	}
 	return func() tea.Msg {
-		pid, err := d.Service.Reply(d.Context, acct, t, body)
+		pid, err := d.Service.ReplyTo(d.Context, acct, t, replyTo, body)
 		return postedMsg{destination: destination, threadID: t.ID, postID: pid, err: err}
 	}
 }
@@ -298,7 +303,16 @@ func (m Model) viewCompose() string {
 		b.WriteString(c.title.View() + "\n")
 		b.WriteString(kit.Rule(cw-6, "─", stops, 0) + "\n\n")
 	} else {
-		b.WriteString(kit.S(m.th.Muted).Render("replying to ") + kit.S(m.th.Text).Bold(true).Render(clip(c.thread.Title, max(1, cw-20))) + "\n\n")
+		destination := c.thread.Title
+		if c.replyTo != 0 {
+			for i, p := range m.posts {
+				if p.ID == c.replyTo {
+					destination = fmt.Sprintf("#%d/%d by @%s · %s", c.thread.ID, i+1, p.AuthorHandle, destination)
+					break
+				}
+			}
+		}
+		b.WriteString(kit.S(m.th.Muted).Render("replying to ") + kit.S(m.th.Text).Bold(true).Render(clip(destination, max(1, cw-20))) + "\n\n")
 	}
 	b.WriteString(c.body.View() + "\n\n")
 	count := len([]rune(c.body.Value()))
@@ -372,7 +386,8 @@ func (m *Model) openPalette() {
 		)
 	}
 	if m.acct != nil {
-		acts = append(acts, action{"Contact staff", "private message", brand, (*Model).openStaffContact})
+		acts = append(acts, action{"Inbox", "replies and mentions", brand, (*Model).openInbox},
+			action{"Contact staff", "private message", brand, (*Model).openStaffContact})
 	}
 	acts = append(acts,
 		action{"Home", "go", brand, func(m *Model) tea.Cmd { m.goHome(); return nil }},

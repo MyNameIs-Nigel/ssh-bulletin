@@ -33,6 +33,14 @@ func (m *Model) onWheel(msg tea.MouseWheelMsg) tea.Cmd {
 	case scrDirectory:
 		m.directory.menu.Move(d)
 		m.directory.menu.Snap()
+	case scrInbox:
+		if !m.inbox.busy && !m.inbox.loading {
+			if m.inbox.menu.Move(d) {
+				m.inbox.menu.Snap()
+			} else if (d > 0 && m.inbox.more) || (d < 0 && m.inbox.page > 0) {
+				return m.pageInbox(d)
+			}
+		}
 	}
 	return nil
 }

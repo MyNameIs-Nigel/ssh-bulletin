@@ -17,6 +17,7 @@ const (
 	EventChatRemoved                      // a live chat message was deleted or removed
 	EventRestriction                      // an account's write restriction changed
 	EventMute                             // a viewer's private mute preferences changed
+	EventInbox                            // a viewer's inbox state changed
 )
 
 // Event is broadcast to every live session so screens refresh in place.

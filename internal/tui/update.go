@@ -73,7 +73,7 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ticking = false
 			cmds = append(cmds, m.idleBreathTick())
 		}
-		cmds = append(cmds, m.clockTick(), m.refreshRole(), m.loadModeration(), m.refreshFriends())
+		cmds = append(cmds, m.clockTick(), m.refreshRole(), m.loadModeration(), m.refreshFriends(), m.refreshInbox())
 
 	case eventsClosedMsg:
 		return m, nil
@@ -158,6 +158,7 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.mergeRefs(msg.refs)
 		m.curThread, m.posts = msg.thread, msg.posts
+		m.threadMuted = msg.threadMuted
 		if msg.focus != 0 {
 			for i, p := range m.posts {
 				if p.ID == msg.focus {
@@ -196,7 +197,7 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case friendsMsg:
 		if msg.request == m.friendsRequest && msg.muteErr == nil && !maps.Equal(m.muted, msg.muted) {
-			cmds = append(cmds, m.receiveMutes(msg.muted))
+			cmds = append(cmds, m.receiveMutes(msg.muted), m.refreshInbox())
 		}
 		if msg.request == m.friendsRequest && msg.err == nil && !maps.Equal(m.friends, msg.ids) {
 			m.friends = msg.ids
@@ -254,7 +255,7 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if first {
 			m.toasts.Push(m.now(), "Welcome, "+acct.Handle, "Your key is your account now.", kit.PaletteNamed(acct.Palette).Stops)
 			m.goHome()
-			cmds = append(cmds, m.refreshFriends())
+			cmds = append(cmds, m.refreshFriends(), m.refreshInbox())
 		} else {
 			m.toasts.Push(m.now(), "Profile saved", "", kit.PaletteNamed(acct.Palette).Stops)
 			m.setAccent(kit.PaletteNamed(acct.Palette).Stops)
@@ -307,6 +308,13 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case chatWithdrawnMsg:
 		cmds = append(cmds, m.receiveChatWithdrawn(msg))
+
+	case inboxLoadedMsg:
+		cmds = append(cmds, m.receiveInbox(msg))
+	case inboxOpenedMsg:
+		cmds = append(cmds, m.receiveInboxOpened(msg))
+	case inboxMuteMsg:
+		cmds = append(cmds, m.receiveInboxMute(msg))
 
 	case moderationPageMsg:
 		cmds = append(cmds, m.receiveModerationPage(msg))
@@ -425,6 +433,8 @@ func (m *Model) routeInput(msg tea.Msg) tea.Cmd {
 		return m.updateProfile(msg)
 	case scrDirectory:
 		return m.updateDirectory(msg)
+	case scrInbox:
+		return m.updateInbox(msg)
 	case scrChat:
 		// The input has the keyboard: q, / and friends are text here.
 		return m.updateChat(msg)
@@ -522,7 +532,7 @@ func (m *Model) onEvent(ev board.Event) tea.Cmd {
 	mine := m.acct != nil && ev.Actor == m.acct.Handle
 	switch ev.Kind {
 	case board.EventThread, board.EventReply:
-		cmds = append(cmds, m.loadHome())
+		cmds = append(cmds, m.loadHome(), m.refreshInbox())
 		if m.screen == scrBoard && ev.BoardID == m.curBoard.ID {
 			cmds = append(cmds, m.loadThreads(m.curBoard.ID))
 		}
@@ -571,6 +581,14 @@ func (m *Model) onEvent(ev board.Event) tea.Cmd {
 		if ev.AccountID == m.viewerID() {
 			cmds = append(cmds, m.refreshFriends())
 		}
+	case board.EventInbox:
+		if ev.AccountID == m.viewerID() {
+			cmds = append(cmds, m.refreshInbox())
+			if m.screen == scrThread && ev.ThreadID == m.curThread.ID {
+				m.contentVersion++
+				cmds = append(cmds, m.loadPosts(m.curThread.ID, 0))
+			}
+		}
 	case board.EventChat:
 		// Chat never toasts: it would bury every other notice. The board
 		// section and chat screen show it as it arrives.
@@ -593,7 +611,7 @@ func (m *Model) onEvent(ev board.Event) tea.Cmd {
 		m.contentVersion++
 		delete(m.previews, ev.ThreadID)
 		clear(m.peek)
-		cmds = append(cmds, m.loadModeration(), m.loadHome())
+		cmds = append(cmds, m.loadModeration(), m.loadHome(), m.refreshInbox())
 		if m.screen == scrThread {
 			cmds = append(cmds, m.loadPosts(m.curThread.ID, 0))
 		}
@@ -676,6 +694,7 @@ func (m *Model) enterBoard(b board.Board) tea.Cmd {
 
 func (m *Model) enterThread(t board.Thread, focus int64) tea.Cmd {
 	m.curThread = t
+	m.threadMuted, m.threadFromInbox = false, false
 	m.revealedPosts = nil
 	m.screen = scrThread
 	m.posts = nil
@@ -699,6 +718,10 @@ func (m *Model) openProfile() {
 func (m *Model) back() tea.Cmd {
 	switch m.screen {
 	case scrThread:
+		if m.threadFromInbox {
+			m.threadFromInbox = false
+			return m.showInbox()
+		}
 		m.screen = scrBoard
 		m.setAccent(kit.PaletteNamed(m.curBoard.Palette).Stops)
 		m.touchFocus()
@@ -737,7 +760,7 @@ func friendly(err error) string {
 		board.ErrForbidden, board.ErrInvalidFingerprint, board.ErrKeyMismatch, board.ErrOwnerRole,
 		board.ErrReasonRequired, board.ErrAlreadyReported, board.ErrReviewChanged, board.ErrPostLimit,
 		board.ErrNewcomerLimit, board.ErrReportLimit, board.ErrPinLimit, board.ErrFlairInvalid, board.ErrSelfFriend, board.ErrChatLimit,
-		board.ErrHandleChangeRequired, board.ErrContactLimit, board.ErrRestrictionDuration, board.ErrThreadLocked, board.ErrSelfMute} {
+		board.ErrHandleChangeRequired, board.ErrContactLimit, board.ErrRestrictionDuration, board.ErrThreadLocked, board.ErrSelfMute, board.ErrReplyTarget} {
 		if errors.Is(err, known) {
 			return known.Error()
 		}

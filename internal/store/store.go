@@ -321,7 +321,7 @@ func (st *Store) Posts(ctx context.Context, threadID, viewer int64) ([]Post, err
 }
 
 // CreateThread inserts a thread and its opening post in one transaction.
-func (st *Store) CreateThread(ctx context.Context, boardID, authorID int64, title, body string, now int64) (int64, int64, error) {
+func (st *Store) CreateThread(ctx context.Context, boardID, authorID int64, title, body string, now int64, mentions []string) (int64, int64, error) {
 	tx, err := st.beginAccountWrite(ctx, authorID, now)
 	if err != nil {
 		return 0, 0, err
@@ -342,6 +342,9 @@ func (st *Store) CreateThread(ctx context.Context, boardID, authorID int64, titl
 		return 0, 0, err
 	}
 	pid, _ := res.LastInsertId()
+	if err := addInboxActivity(ctx, tx, tid, pid, authorID, 0, false, mentions); err != nil {
+		return 0, 0, err
+	}
 	return tid, pid, tx.Commit()
 }
 
@@ -351,7 +354,7 @@ const insertPost = `INSERT INTO posts (thread_id, author_id, body, created_at, f
 	VALUES (?, ?, ?, ?, (SELECT flair FROM accounts WHERE id = ?))`
 
 // Reply appends a post, bumps the thread activity, and returns the ID and current thread title.
-func (st *Store) Reply(ctx context.Context, threadID, authorID int64, body string, now int64) (int64, string, error) {
+func (st *Store) Reply(ctx context.Context, threadID, authorID, replyTo int64, body string, now int64, mentions []string) (int64, string, error) {
 	tx, err := st.beginAccountWrite(ctx, authorID, now)
 	if err != nil {
 		return 0, "", err
@@ -376,11 +379,24 @@ func (st *Store) Reply(ctx context.Context, threadID, authorID int64, body strin
 	if err := checkPostQuota(ctx, tx, authorID, now); err != nil {
 		return 0, "", err
 	}
+	if replyTo != 0 {
+		var exists bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM posts
+			WHERE id = ? AND thread_id = ?)`, replyTo, threadID).Scan(&exists); err != nil {
+			return 0, "", err
+		}
+		if !exists {
+			return 0, "", ErrReplyTarget
+		}
+	}
 	res, err := tx.ExecContext(ctx, insertPost, threadID, authorID, body, now, authorID)
 	if err != nil {
 		return 0, "", err
 	}
 	pid, _ := res.LastInsertId()
+	if err := addInboxActivity(ctx, tx, threadID, pid, authorID, replyTo, true, mentions); err != nil {
+		return 0, "", err
+	}
 	return pid, title, tx.Commit()
 }
 

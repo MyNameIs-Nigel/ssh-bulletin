@@ -48,6 +48,7 @@ const (
 	scrDirectory
 	scrUserProfile
 	scrChat
+	scrInbox
 )
 
 type overlayKind int
@@ -95,20 +96,22 @@ type Model struct {
 	idleInhale bool
 
 	// Data.
-	stats          board.Stats
-	boards         []board.Board
-	boardMenu      kit.Menu
-	curBoard       board.Board
-	threads        []board.Thread
-	threadMenu     kit.Menu
-	previews       map[int64][]board.Post   // board screen: opening posts by thread
-	peek           map[int64][]board.Thread // home screen: recent threads by board
-	curThread      board.Thread
-	posts          []board.Post
-	postCursor     int
-	postTop        int // first visible line of the thread view
-	loading        bool
-	contentVersion int // invalidates reads started before a visibility change
+	stats           board.Stats
+	boards          []board.Board
+	boardMenu       kit.Menu
+	curBoard        board.Board
+	threads         []board.Thread
+	threadMenu      kit.Menu
+	previews        map[int64][]board.Post   // board screen: opening posts by thread
+	peek            map[int64][]board.Thread // home screen: recent threads by board
+	curThread       board.Thread
+	threadMuted     bool
+	threadFromInbox bool
+	posts           []board.Post
+	postCursor      int
+	postTop         int // first visible line of the thread view
+	loading         bool
+	contentVersion  int // invalidates reads started before a visibility change
 
 	// Live chat of the board in view, and whether the board screen's chat
 	// section (rather than its thread list) has focus.
@@ -128,11 +131,13 @@ type Model struct {
 	friendsRequest int
 	socialRequest  int
 
-	mod         moderationState
-	modForm     moderationForm
-	opts        optionsState
-	modRequest  int
-	roleRequest int
+	mod          moderationState
+	modForm      moderationForm
+	opts         optionsState
+	modRequest   int
+	roleRequest  int
+	inbox        inboxState
+	inboxRequest int
 
 	// Overlays.
 	overlay  overlayKind
@@ -225,7 +230,7 @@ func (m Model) myStops() []color.Color {
 
 // Init starts the event listener, the clock, and the splash animation.
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{waitEvent(m.d.Events), m.clockTick(), m.loadHome(), m.loadFriends(), m.loadAccountStatus()}
+	cmds := []tea.Cmd{waitEvent(m.d.Events), m.clockTick(), m.loadHome(), m.loadFriends(), m.loadAccountStatus(), m.loadInbox()}
 	if m.screen == scrSplash || m.screen == scrOnboard {
 		cmds = append(cmds, kit.Frame(m.gen))
 	}
@@ -308,13 +313,14 @@ type previewMsg struct {
 	refs     board.Refs
 }
 type postsMsg struct {
-	version  int
-	threadID int64
-	thread   board.Thread
-	posts    []board.Post
-	err      error
-	focus    int64 // post id to put the cursor on, if any
-	refs     board.Refs
+	version     int
+	threadID    int64
+	thread      board.Thread
+	posts       []board.Post
+	err         error
+	focus       int64 // post id to put the cursor on, if any
+	refs        board.Refs
+	threadMuted bool
 }
 type eventMsg board.Event
 type eventsClosedMsg struct{}
@@ -407,7 +413,8 @@ func (m Model) loadPosts(threadID, focus int64) tea.Cmd {
 			bodies[i] = p.Body
 		}
 		refs, _ := d.Service.ResolveText(d.Context, bodies...)
-		return postsMsg{version: version, threadID: threadID, thread: t, posts: ps, err: err, focus: focus, refs: refs}
+		muted, _ := d.Service.ThreadMuted(d.Context, viewer, threadID)
+		return postsMsg{version: version, threadID: threadID, thread: t, posts: ps, err: err, focus: focus, refs: refs, threadMuted: muted}
 	}
 }
 

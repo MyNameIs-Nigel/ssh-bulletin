@@ -152,6 +152,20 @@ var migrations = []string{
 		PRIMARY KEY (viewer_id, muted_id)
 	) WITHOUT ROWID;
 	ALTER TABLE threads ADD COLUMN lock_reason TEXT NOT NULL DEFAULT '';`,
+	// v9: durable activity inbox and per-player thread notification settings.
+	`CREATE TABLE inbox (
+		viewer_id INTEGER NOT NULL REFERENCES accounts(id),
+		post_id INTEGER NOT NULL REFERENCES posts(id),
+		reasons INTEGER NOT NULL CHECK (reasons BETWEEN 1 AND 7),
+		is_read INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (viewer_id, post_id)
+	) WITHOUT ROWID;
+	CREATE INDEX inbox_unread ON inbox (viewer_id, post_id) WHERE is_read = 0;
+	CREATE TABLE thread_mutes (
+		viewer_id INTEGER NOT NULL REFERENCES accounts(id),
+		thread_id INTEGER NOT NULL REFERENCES threads(id),
+		PRIMARY KEY (viewer_id, thread_id)
+	) WITHOUT ROWID;`,
 }
 
 func (st *Store) migrate(ctx context.Context) error {
