@@ -62,5 +62,5 @@ func (s *Service) SetFriend(ctx context.Context, viewer, target int64, on bool) 
 	if viewer == target {
 		return ErrSelfFriend
 	}
-	return s.st.SetFriend(ctx, viewer, target, on)
+	return s.st.SetFriend(ctx, viewer, target, on, s.now().Unix())
 }

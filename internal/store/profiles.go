@@ -54,14 +54,22 @@ func (st *Store) FriendIDs(ctx context.Context, viewer int64) (map[int64]bool, e
 }
 
 // SetFriend adds or removes a private bookmark for another account.
-func (st *Store) SetFriend(ctx context.Context, viewer, target int64, on bool) error {
-	if on {
-		_, err := st.db.ExecContext(ctx, `INSERT INTO friends (viewer_id, friend_id) VALUES (?, ?)
-			ON CONFLICT (viewer_id, friend_id) DO NOTHING`, viewer, target)
+func (st *Store) SetFriend(ctx context.Context, viewer, target int64, on bool, now int64) error {
+	tx, err := st.beginAccountWrite(ctx, viewer, now)
+	if err != nil {
 		return err
 	}
-	_, err := st.db.ExecContext(ctx, `DELETE FROM friends WHERE viewer_id = ? AND friend_id = ?`, viewer, target)
-	return err
+	defer tx.Rollback()
+	if on {
+		_, err = tx.ExecContext(ctx, `INSERT INTO friends (viewer_id, friend_id) VALUES (?, ?)
+			ON CONFLICT (viewer_id, friend_id) DO NOTHING`, viewer, target)
+	} else {
+		_, err = tx.ExecContext(ctx, `DELETE FROM friends WHERE viewer_id = ? AND friend_id = ?`, viewer, target)
+	}
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ProfilePost points to an account's public activity.

@@ -88,3 +88,42 @@ func TestUpgradeChoosesEarliestExistingPlayer(t *testing.T) {
 		t.Fatalf("legacy content: %+v %v", posts, err)
 	}
 }
+
+func TestUpgradePreservesReportsAndDecisions(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "moderation.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, migration := range migrations[:6] {
+		if _, err := db.ExecContext(ctx, migration); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.ExecContext(ctx, `PRAGMA user_version = 6;
+		INSERT INTO accounts (id, fingerprint, handle, handle_lower, palette, created_at, last_seen) VALUES
+		(1, 'owner-key', 'Owner', 'owner', 'reef', 1, 1), (2, 'player-key', 'Player', 'player', 'reef', 2, 2);
+		INSERT INTO owner (singleton, fingerprint) VALUES (1, 'owner-key');
+		INSERT INTO threads (id, board_id, title, author_id, created_at, last_post_at) VALUES (1, 1, 'Thread', 1, 1, 2);
+		INSERT INTO posts (id, thread_id, author_id, body, created_at, removed) VALUES (1, 1, 1, 'Opening', 1, 0), (2, 1, 2, 'Reply', 2, 1);
+		INSERT INTO moderation_log (id, post_id, actor_id, action, reason, created_at, resolved) VALUES
+		(5, 1, 2, 'reported', 'Pending', 3, 0), (6, 2, 1, 'removed', 'Decision', 4, 0);`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	st, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	queue, err := st.ModerationPage(ctx, 1, QueueView, 0, 10)
+	if err != nil || len(queue) != 1 || queue[0].ID != 5 || queue[0].Target != (ModerationTarget{PostTarget, 1}) || queue[0].Body != "Opening" {
+		t.Fatalf("migrated queue: %+v %v", queue, err)
+	}
+	removed, err := st.ModerationPage(ctx, 1, RemovedView, 0, 10)
+	if err != nil || len(removed) != 1 || removed[0].ID != 6 || removed[0].Target != (ModerationTarget{PostTarget, 2}) || removed[0].Reason != "Decision" {
+		t.Fatalf("migrated decisions: %+v %v", removed, err)
+	}
+}

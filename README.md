@@ -98,11 +98,15 @@ staff can remove content or pin threads. Deleted and removed posts appear as
 placeholders in the conversation. Removing an opening post closes the thread
 to new replies until staff restore it.
 
-Press `!` to report a post. Staff can open Moderation with `m` to review
-reports, see decisions, and restore removed posts. The super admin
-can grant and revoke `A` by matching the player's handle and full SSH
-fingerprint. See the [moderation proposal and rollout notes](docs/03-moderation.md)
-for first-run and upgrade behavior.
+Press `!` to report a post. Chat messages and other players' profiles have
+a Report action in their `o` menu. Use **Contact staff** in the `/` jump menu
+to send a private message or request review of a restriction. In chat, open
+the jump menu with `ctrl+k`.
+
+Staff can open Moderation with `m` to review reports, see decisions, and
+restore removed posts. Staff can time out or suspend a player from their
+profile options. The super admin can grant and revoke `A` by matching the
+player's handle and full SSH fingerprint. See the [moderation guide](docs/03-moderation.md).
 
 The release workflow can deploy Bulletin after the lobby, AWS, and GitHub
 setup in the [arcade onboarding guide](docs/01-arcade-onboarding.md).

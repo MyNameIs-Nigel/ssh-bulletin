@@ -87,3 +87,48 @@ func TestModerationKeysAndFlairs(t *testing.T) {
 		t.Fatalf("history tab: %+v", staff.mod.entries)
 	}
 }
+
+func TestModerationReportMenusAndRestrictionReview(t *testing.T) {
+	f := newChatFixture(t)
+	msg := f.say(t, f.bob, "Reported chat line")
+	member := drive(t, f.openChatModel(t, f.alice, 80, 24), key("tab"), key("o"))
+	member.overlayT = 1
+	member = clickOn(t, member, "option:1")
+	if member.modForm.content != (board.ModerationTarget{Kind: board.ChatTarget, ID: msg.ID}) {
+		t.Fatalf("chat report target: %+v", member.modForm)
+	}
+	member = drive(t, member, tea.PasteMsg{Content: "From chat options"}, key("enter"))
+	member = drive(t, member, member.openUserProfile(f.bob.ID)(), key("o"), key("enter"))
+	if member.modForm.content != (board.ModerationTarget{Kind: board.ProfileTarget, ID: f.bob.ID}) {
+		t.Fatalf("profile report target: %+v", member.modForm)
+	}
+	member = drive(t, member, tea.PasteMsg{Content: "From profile options"}, key("enter"))
+	owner := drive(t, modelFor(f.svc, f.owner, 80, 24), key("m"))
+	if len(owner.mod.entries) != 2 || !strings.Contains(owner.mod.entries[0].Body, "Reported chat line") || owner.mod.entries[1].Reason != "From profile options" {
+		t.Fatalf("staff queue: %+v", owner.mod.entries)
+	}
+	owner = drive(t, owner, owner.openUserProfile(f.bob.ID)(), key("o"), key("down"), key("enter"))
+	if owner.modForm.action != board.TimedOut {
+		t.Fatalf("restriction action: %+v", owner.modForm)
+	}
+	owner = drive(t, owner, tea.PasteMsg{Content: "Repeated spam"}, key("tab"), tea.PasteMsg{Content: "30m"}, key("enter"))
+	if owner.overlay != ovNone {
+		t.Fatalf("restriction submission: %s", owner.modForm.err)
+	}
+	player := drive(t, modelFor(f.svc, f.bob, 80, 24))
+	if player.restriction == nil || !strings.Contains(screenText(player), "Account timed out") {
+		t.Fatalf("reconnecting player's restriction: %s", screenText(player))
+	}
+	player = clickOn(t, player, "foot:contact")
+	if !strings.Contains(ansi.Strip(player.viewModerationForm()), "Repeated spam") {
+		t.Fatal("Contact staff did not show the restriction reason")
+	}
+	player = drive(t, player, tea.PasteMsg{Content: "Please review this"}, key("enter"))
+	if player.overlay != ovNone {
+		t.Fatalf("staff contact submission: %s", player.modForm.err)
+	}
+	queue, err := f.svc.ModerationPage(context.Background(), f.owner.ID, board.QueueView, 0)
+	if err != nil || len(queue) != 3 || queue[2].Target.Kind != board.ContactTarget || queue[2].Body != "Please review this" {
+		t.Fatalf("appeal queue: %+v %v", queue, err)
+	}
+}

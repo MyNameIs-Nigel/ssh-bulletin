@@ -55,23 +55,33 @@ type moderationResultMsg struct {
 }
 
 type roleMsg struct {
-	request int
-	role    board.Role
-	err     error
+	request     int
+	role        board.Role
+	restriction *board.AccountRestriction
+	rename      bool
+	err         error
 }
 
 func (m Model) canModerate() bool { return m.acct != nil && m.acct.Role.CanModerate() }
 func (m Model) isOwner() bool     { return m.acct != nil && m.acct.Role == board.RoleOwner }
 
 func (m *Model) refreshRole() tea.Cmd {
+	m.roleRequest++
+	return m.loadAccountStatus()
+}
+
+func (m Model) loadAccountStatus() tea.Cmd {
 	if m.acct == nil {
 		return nil
 	}
-	m.roleRequest++
 	request, d, actor := m.roleRequest, m.d, m.acct.ID
 	return func() tea.Msg {
 		a, err := d.Service.Account(d.Context, actor)
-		return roleMsg{request: request, role: a.Role, err: err}
+		if err != nil {
+			return roleMsg{request: request, err: err}
+		}
+		r, err := d.Service.AccountRestriction(d.Context, actor)
+		return roleMsg{request: request, role: a.Role, restriction: r, rename: a.HandleChangeRequired, err: err}
 	}
 }
 
@@ -214,9 +224,13 @@ func (m *Model) moderateEntry(key string, entry board.ModerationEntry) {
 	}
 	switch {
 	case key == "d" && m.mod.tab == modQueue:
-		m.startModerationForm(board.Dismissed, entry.PostID, entry.Title, entry.Opening)
-	case key == "x" && m.mod.tab == modQueue:
-		m.startModerationForm(board.Removed, entry.PostID, entry.Title, entry.Opening)
+		m.startReviewForm(board.Dismissed, entry)
+	case key == "x" && m.mod.tab == modQueue && (entry.Target.Kind == board.PostTarget || entry.Target.Kind == board.ChatTarget):
+		m.startReviewForm(board.Removed, entry)
+	case key == "b" && m.mod.tab == modQueue && entry.Target.Kind == board.ProfileTarget:
+		m.startReviewForm(board.BioCleared, entry)
+	case key == "n" && m.mod.tab == modQueue && entry.Target.Kind == board.ProfileTarget:
+		m.startReviewForm(board.HandleChangeRequired, entry)
 	case key == "u" && m.mod.tab == modRemoved:
 		m.startModerationForm(board.Restored, entry.PostID, entry.Title, entry.Opening)
 	}
@@ -229,8 +243,14 @@ func (m Model) moderationPanel() kit.Panel {
 
 func (m Model) moderationDetailLines(w int) []string {
 	e := m.mod.detail
-	header := fmt.Sprintf("#%d · %s · @%s", e.PostID, postKind(e.Opening), e.Author)
+	header := fmt.Sprintf("%s #%d · @%s", e.Target.Kind, e.Target.ID, e.Author)
+	if e.Target.Kind == board.PostTarget {
+		header = fmt.Sprintf("#%d · %s · @%s", e.PostID, postKind(e.Opening), e.Author)
+	}
 	action := fmt.Sprintf("%s by @%s · %s UTC", e.Action, e.Actor, time.Unix(e.CreatedAt, 0).UTC().Format("2006-01-02 15:04"))
+	if e.ExpiresAt > 0 {
+		action += "\nExpiry " + time.Unix(e.ExpiresAt, 0).UTC().Format("2006-01-02 15:04 UTC")
+	}
 	return strings.Split(kit.Wrap(e.Title+"\n"+header+"\n"+action+"\n"+e.Reason+"\n\n"+e.Body, w), "\n")
 }
 
@@ -281,7 +301,7 @@ func (m Model) viewModeration() string {
 				label = "@" + s.admins[i].Handle + " [A]"
 			} else {
 				e := s.entries[i]
-				label = fmt.Sprintf("#%d %s · %s · %s", e.PostID, e.Action, e.Title, e.Reason)
+				label = fmt.Sprintf("%s #%d · %s · %s · %s", e.Target.Kind, e.Target.ID, e.Action, e.Title, e.Reason)
 			}
 			marker := "  "
 			if i == s.cursor {
@@ -301,22 +321,60 @@ func postKind(opening bool) string {
 }
 
 type moderationForm struct {
-	action  board.ModerationAction // empty for admin management
-	postID  int64
-	target  string
-	opening bool
-	grant   bool
-	first   textinput.Model // reason or handle
-	second  textinput.Model // fingerprint
-	focus   int
-	busy    bool
-	err     string
+	action   board.ModerationAction // empty for admin management
+	postID   int64
+	content  board.ModerationTarget
+	reportID int64
+	target   string
+	opening  bool
+	grant    bool
+	first    textinput.Model // reason or handle
+	second   textinput.Model // fingerprint
+	focus    int
+	busy     bool
+	err      string
+}
+
+func (f moderationForm) twoFields() bool {
+	return f.action == "" || f.action == board.TimedOut || f.action == board.Suspended
 }
 
 func (m *Model) startModerationForm(action board.ModerationAction, postID int64, title string, opening bool) {
 	m.modForm = moderationForm{action: action, postID: postID, target: title, opening: opening,
+		content: board.ModerationTarget{Kind: board.PostTarget, ID: postID},
+		first:   m.moderationInput("Reason", board.MaxReasonLen)}
+	m.openModerationForm()
+}
+
+func (m *Model) startReviewForm(action board.ModerationAction, entry board.ModerationEntry) {
+	if entry.Target.Kind == board.PostTarget {
+		m.startModerationForm(action, entry.PostID, entry.Title, entry.Opening)
+		return
+	}
+	m.modForm = moderationForm{action: action, content: entry.Target, reportID: entry.ID, target: entry.Title,
 		first: m.moderationInput("Reason", board.MaxReasonLen)}
 	m.openModerationForm()
+}
+
+func (m *Model) startContentReport(target board.ModerationTarget, label string) {
+	m.modForm = moderationForm{action: board.Reported, content: target, target: label,
+		first: m.moderationInput("Reason", board.MaxReasonLen)}
+	m.openModerationForm()
+}
+
+func (m *Model) startRestrictionForm(action board.ModerationAction, account board.Account) {
+	m.modForm = moderationForm{action: action, target: "@" + account.Handle,
+		content: board.ModerationTarget{Kind: board.ProfileTarget, ID: account.ID},
+		first:   m.moderationInput("Reason shown to the player", board.MaxReasonLen),
+		second:  m.moderationInput("Duration, e.g. 30m or 24h", 20)}
+	m.openModerationForm()
+}
+
+func (m *Model) openStaffContact() tea.Cmd {
+	m.modForm = moderationForm{action: board.Reported, content: board.ModerationTarget{Kind: board.ContactTarget},
+		first: m.moderationInput("Your message to staff", board.MaxChatLen)}
+	m.openModerationForm()
+	return nil
 }
 
 func (m *Model) startAdminForm(grant bool) {
@@ -351,12 +409,12 @@ func (m *Model) updateModerationForm(msg tea.Msg) tea.Cmd {
 			m.closeOverlay()
 			return nil
 		case "tab", "shift+tab":
-			if f.action == "" {
+			if f.twoFields() {
 				f.switchField()
 			}
 			return nil
 		case "enter":
-			if f.action == "" && f.focus == 0 {
+			if f.twoFields() && f.focus == 0 {
 				f.switchField()
 				return nil
 			}
@@ -403,8 +461,17 @@ func (m *Model) submitModerationForm() tea.Cmd {
 			}
 			return moderationResultMsg{message: message, err: err}
 		case board.Reported:
-			return moderationResultMsg{message: "Report sent to moderators", err: d.Service.Report(d.Context, id, f.postID, first)}
+			if f.content.Kind == board.ContactTarget {
+				return moderationResultMsg{message: "Message sent to staff", err: d.Service.ContactStaff(d.Context, id, first)}
+			}
+			return moderationResultMsg{message: "Report sent to moderators", err: d.Service.ReportContent(d.Context, id, f.content, first)}
+		case board.TimedOut, board.Suspended, board.RestrictionLifted:
+			duration, _ := time.ParseDuration(strings.TrimSpace(second))
+			return moderationResultMsg{message: "Account " + string(f.action), err: d.Service.SetRestriction(d.Context, id, f.content.ID, f.action, first, duration)}
 		default:
+			if f.reportID != 0 {
+				return moderationResultMsg{message: "Decision recorded", err: d.Service.ReviewReport(d.Context, id, f.reportID, f.action, first)}
+			}
 			return moderationResultMsg{message: "Post " + string(f.action), err: d.Service.Moderate(d.Context, id, f.postID, f.action, first)}
 		}
 	}
@@ -417,20 +484,33 @@ func (m Model) viewModerationForm() string {
 	var title, context string
 	switch f.action {
 	case board.Reported:
-		title = "Report post"
+		title = "Report " + string(f.content.Kind)
 		f.first.Placeholder = "Reason (spam, harassment, off-topic…)"
+		if f.content.Kind == board.ContactTarget {
+			title, f.first.Placeholder = "Contact staff", "Your message to staff"
+		}
 	case board.Dismissed:
-		title = "Dismiss reports for this post"
+		title = "Dismiss reports"
 	case board.Removed:
 		title = "Remove " + postKind(f.opening)
-		if f.opening {
-			title = "Remove opening post"
+		if f.content.Kind == board.ChatTarget {
+			title = "Remove chat message"
 		}
 	case board.Restored:
 		title = "Restore " + postKind(f.opening)
 		if f.opening {
 			title = "Restore thread"
 		}
+	case board.BioCleared:
+		title = "Clear the reported bio"
+	case board.HandleChangeRequired:
+		title = "Require a new handle"
+	case board.TimedOut:
+		title = "Time out account"
+	case board.Suspended:
+		title = "Suspend account"
+	case board.RestrictionLifted:
+		title = "Lift restriction"
 	default:
 		title = "Revoke admin access"
 		if f.grant {
@@ -438,12 +518,17 @@ func (m Model) viewModerationForm() string {
 		}
 		context = "Use the full fingerprint from the player's profile."
 	}
-	if f.action != "" {
-		context = kit.Fit(fmt.Sprintf("#%d · %s", f.postID, f.target), w-6)
+	if f.content.Kind == board.ContactTarget {
+		context = "Only staff can read this message."
+		if m.restriction != nil {
+			context += "\n" + kit.Wrap(m.restriction.Error(), w-6)
+		}
+	} else if f.action != "" {
+		context = kit.Fit(fmt.Sprintf("#%d · %s", f.content.ID, f.target), w-6)
 	}
 	lines := []string{"", context, "", f.first.View()}
 	hints := []kit.Hint{{"⏎", "confirm"}, {"esc", "cancel"}}
-	if f.action == "" {
+	if f.twoFields() {
 		f.second.SetWidth(w - 9)
 		lines = append(lines, f.second.View())
 		hints = append([]kit.Hint{{"tab", "field"}}, hints...)
@@ -452,6 +537,7 @@ func (m Model) viewModerationForm() string {
 	switch {
 	case f.err != "":
 		lines = append(lines, kit.S(m.th.Bad).Render(kit.Wrap(f.err, w-6)))
+		lines = append(lines, m.hintBar(hints, m.accent(), w-6, "modform"))
 	case f.busy:
 		lines = append(lines, "Saving…")
 	default:
@@ -467,7 +553,21 @@ func (m Model) moderationHints() []kit.Hint {
 	var hints []kit.Hint
 	switch m.mod.tab {
 	case modQueue:
-		hints = []kit.Hint{{"d", "dismiss"}, {"x", "remove"}}
+		hints = []kit.Hint{{"d", "dismiss"}}
+		var e *board.ModerationEntry
+		if m.mod.detail != nil {
+			e = m.mod.detail
+		} else if m.mod.cursor < len(m.mod.entries) {
+			e = &m.mod.entries[m.mod.cursor]
+		}
+		if e != nil {
+			switch e.Target.Kind {
+			case board.ChatTarget, board.PostTarget:
+				hints = append(hints, kit.Hint{"x", "remove"})
+			case board.ProfileTarget:
+				hints = append(hints, kit.Hint{"b", "clear bio"}, kit.Hint{"n", "require rename"})
+			}
+		}
 	case modRemoved:
 		hints = []kit.Hint{{"u", "restore"}}
 	case modAdmins:

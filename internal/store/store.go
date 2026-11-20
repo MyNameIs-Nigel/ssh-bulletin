@@ -34,17 +34,18 @@ type Store struct{ db *sql.DB }
 
 // Account is one poster, keyed by key fingerprint.
 type Account struct {
-	ID          int64
-	Fingerprint string
-	PublicKey   string // authorized_keys format, as last seen
-	Handle      string
-	Palette     string
-	Bio         string
-	Flair       string
-	CreatedAt   int64
-	LastSeen    int64
-	PostCount   int64
-	Role        Role
+	ID                   int64
+	Fingerprint          string
+	PublicKey            string // authorized_keys format, as last seen
+	Handle               string
+	Palette              string
+	Bio                  string
+	Flair                string
+	CreatedAt            int64
+	LastSeen             int64
+	PostCount            int64
+	Role                 Role
+	HandleChangeRequired bool
 }
 
 // Board is a top-level topic.
@@ -156,11 +157,11 @@ func (st *Store) AccountByID(ctx context.Context, id int64) (Account, error) {
 const accountSelect = `SELECT a.id, a.fingerprint, a.public_key, a.handle, a.palette, a.bio, a.flair, a.created_at, a.last_seen,
 	(SELECT COUNT(*) FROM posts p
 		WHERE p.author_id = a.id AND p.removed = 0 AND p.deleted = 0),
-	` + roleSQL + ` FROM accounts a`
+	` + roleSQL + `, a.handle_change_required FROM accounts a`
 
 func (st *Store) scanAccount(row interface{ Scan(...any) error }) (Account, error) {
 	var a Account
-	err := row.Scan(&a.ID, &a.Fingerprint, &a.PublicKey, &a.Handle, &a.Palette, &a.Bio, &a.Flair, &a.CreatedAt, &a.LastSeen, &a.PostCount, &a.Role)
+	err := row.Scan(&a.ID, &a.Fingerprint, &a.PublicKey, &a.Handle, &a.Palette, &a.Bio, &a.Flair, &a.CreatedAt, &a.LastSeen, &a.PostCount, &a.Role, &a.HandleChangeRequired)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Account{}, ErrNotFound
 	}
@@ -181,11 +182,27 @@ func (st *Store) CreateAccount(ctx context.Context, fp, publicKey, handle, palet
 }
 
 // UpdateProfile changes an account's handle, palette, bio and post flair.
-func (st *Store) UpdateProfile(ctx context.Context, id int64, handle, palette, bio, flair string) error {
-	_, err := st.db.ExecContext(ctx,
-		`UPDATE accounts SET handle = ?, handle_lower = ?, palette = ?, bio = ?, flair = ? WHERE id = ?`,
-		handle, strings.ToLower(handle), palette, bio, flair, id)
-	return uniqueErr(err)
+func (st *Store) UpdateProfile(ctx context.Context, id int64, handle, palette, bio, flair string, now int64) error {
+	tx, err := st.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := checkAccountWrite(ctx, tx, id, now, true); err != nil {
+		return err
+	}
+	lower := strings.ToLower(handle)
+	res, err := tx.ExecContext(ctx,
+		`UPDATE accounts SET handle = ?, handle_lower = ?, palette = ?, bio = ?, flair = ?, handle_change_required = 0
+		WHERE id = ? AND (handle_change_required = 0 OR handle_lower != ?)`,
+		handle, lower, palette, bio, flair, id, lower)
+	if err != nil {
+		return uniqueErr(err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrHandleChangeRequired
+	}
+	return tx.Commit()
 }
 
 // Touch records activity and the latest known public key.
@@ -302,7 +319,7 @@ func (st *Store) Posts(ctx context.Context, threadID, viewer int64) ([]Post, err
 
 // CreateThread inserts a thread and its opening post in one transaction.
 func (st *Store) CreateThread(ctx context.Context, boardID, authorID int64, title, body string, now int64) (int64, int64, error) {
-	tx, err := st.db.BeginTx(ctx, nil)
+	tx, err := st.beginAccountWrite(ctx, authorID, now)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -332,7 +349,7 @@ const insertPost = `INSERT INTO posts (thread_id, author_id, body, created_at, f
 
 // Reply appends a post, bumps the thread activity, and returns the ID and current thread title.
 func (st *Store) Reply(ctx context.Context, threadID, authorID int64, body string, now int64) (int64, string, error) {
-	tx, err := st.db.BeginTx(ctx, nil)
+	tx, err := st.beginAccountWrite(ctx, authorID, now)
 	if err != nil {
 		return 0, "", err
 	}
@@ -358,8 +375,8 @@ func (st *Store) Reply(ctx context.Context, threadID, authorID int64, body strin
 }
 
 // ToggleKudos flips the viewer's kudos on a post and returns the new state.
-func (st *Store) ToggleKudos(ctx context.Context, postID, accountID int64) (bool, error) {
-	tx, err := st.db.BeginTx(ctx, nil)
+func (st *Store) ToggleKudos(ctx context.Context, postID, accountID, now int64) (bool, error) {
+	tx, err := st.beginAccountWrite(ctx, accountID, now)
 	if err != nil {
 		return false, err
 	}

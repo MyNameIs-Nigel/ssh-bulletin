@@ -196,6 +196,14 @@ func (m Model) sweep() float64 {
 
 // footer shows the current screen's key hints and any flash message.
 func (m Model) footer() string {
+	if m.restriction != nil && m.overlay == ovNone {
+		label := m.hot("foot:contact", (*Model).openStaffContact, "Contact staff")
+		return kit.Fit(kit.S(m.th.Warn).Render(" Account "+string(m.restriction.Kind)+" · ")+label+kit.S(m.th.Muted).Render(" · jump menu"), m.w)
+	}
+	if m.acct != nil && m.acct.HandleChangeRequired && m.overlay == ovNone {
+		edit := m.hot("foot:rename", func(m *Model) tea.Cmd { m.openProfile(); return nil }, "Edit profile")
+		return kit.Fit(kit.S(m.th.Warn).Render(" Choose a new handle to post · ")+edit, m.w)
+	}
 	hints := m.hints()
 	left := " " + m.hintBar(hints, m.accent(), m.w-24, "foot")
 	right := kit.S(m.th.Faint).Render(versionLabel(m.d.Version) + " ")
@@ -269,6 +277,9 @@ func (m Model) hints() []kit.Hint {
 	case scrUserProfile:
 		var hints []kit.Hint
 		if a := m.userProfile.data; a.ID != 0 {
+			if a.ID != m.viewerID() && m.acct != nil {
+				hints = append(hints, kit.Hint{"o", "options"})
+			}
 			switch {
 			case a.ID == m.viewerID():
 				hints = append(hints, kit.Hint{"e", "edit profile"})

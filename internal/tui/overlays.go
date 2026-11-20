@@ -366,6 +366,9 @@ func (m *Model) openPalette() {
 			action{"View your profile", "you", m.myStops(), func(m *Model) tea.Cmd { return m.openUserProfile(m.viewerID()) }},
 		)
 	}
+	if m.acct != nil {
+		acts = append(acts, action{"Contact staff", "private message", brand, (*Model).openStaffContact})
+	}
 	acts = append(acts,
 		action{"Home", "go", brand, func(m *Model) tea.Cmd { m.goHome(); return nil }},
 		action{"New thread", "compose", brand, func(m *Model) tea.Cmd {

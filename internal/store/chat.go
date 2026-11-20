@@ -84,7 +84,7 @@ func (st *Store) ChatAfter(ctx context.Context, boardID, afterID int64, limit in
 // PostChat appends a message to a board's chat after checking the quotas in
 // the same transaction.
 func (st *Store) PostChat(ctx context.Context, boardID, authorID int64, body string, now int64) (ChatMessage, error) {
-	tx, err := st.db.BeginTx(ctx, nil)
+	tx, err := st.beginAccountWrite(ctx, authorID, now)
 	if err != nil {
 		return ChatMessage{}, err
 	}
@@ -150,8 +150,8 @@ func checkChatQuota(ctx context.Context, tx *sql.Tx, authorID, now int64) error 
 }
 
 // DeleteChat withdraws the actor's own message and blanks its body.
-func (st *Store) DeleteChat(ctx context.Context, actorID, id int64) (int64, error) {
-	tx, err := st.db.BeginTx(ctx, nil)
+func (st *Store) DeleteChat(ctx context.Context, actorID, id, now int64) (int64, error) {
+	tx, err := st.beginAccountWrite(ctx, actorID, now)
 	if err != nil {
 		return 0, err
 	}
@@ -175,7 +175,7 @@ func (st *Store) DeleteChat(ctx context.Context, actorID, id int64) (int64, erro
 // RemoveChat hides a message on staff authority. The body is kept, with who
 // removed it and when, so the decision can be audited.
 func (st *Store) RemoveChat(ctx context.Context, actorID, id, now int64) (int64, error) {
-	tx, err := st.db.BeginTx(ctx, nil)
+	tx, err := st.beginAccountWrite(ctx, actorID, now)
 	if err != nil {
 		return 0, err
 	}
@@ -187,6 +187,25 @@ func (st *Store) RemoveChat(ctx context.Context, actorID, id, now int64) (int64,
 	if !role.CanModerate() {
 		return 0, ErrForbidden
 	}
+	target := ModerationTarget{Kind: ChatTarget, ID: id}
+	evidence, err := captureEvidence(ctx, tx, target, true)
+	if err != nil {
+		return 0, err
+	}
+	boardID, err := removeChat(ctx, tx, actorID, id, now)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := resolveReports(ctx, tx, target); err != nil {
+		return 0, err
+	}
+	if _, err := logModeration(ctx, tx, actorID, target, Removed, "Removed from chat", evidence, now, 0); err != nil {
+		return 0, err
+	}
+	return boardID, tx.Commit()
+}
+
+func removeChat(ctx context.Context, tx *sql.Tx, actorID, id, now int64) (int64, error) {
 	boardID, _, gone, err := findChat(ctx, tx, id)
 	if err != nil {
 		return 0, err
@@ -198,7 +217,7 @@ func (st *Store) RemoveChat(ctx context.Context, actorID, id, now int64) (int64,
 		actorID, now, id); err != nil {
 		return 0, err
 	}
-	return boardID, tx.Commit()
+	return boardID, nil
 }
 
 func findChat(ctx context.Context, tx *sql.Tx, id int64) (boardID, authorID int64, gone bool, err error) {

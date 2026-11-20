@@ -86,7 +86,7 @@ func (s *Service) UpdateProfile(ctx context.Context, a Account, handle, palette,
 	if !slices.Contains(PostFlairs(), flair) {
 		return a, ErrFlairInvalid
 	}
-	if err := s.st.UpdateProfile(ctx, a.ID, handle, palette, bio, flair); err != nil {
+	if err := s.st.UpdateProfile(ctx, a.ID, handle, palette, bio, flair, s.now().Unix()); err != nil {
 		if errors.Is(err, store.ErrHandleTaken) {
 			return a, ErrHandleTaken
 		}
@@ -177,7 +177,7 @@ func (s *Service) DeletePost(ctx context.Context, actorID, postID int64) error {
 	if actorID == 0 {
 		return ErrNoAccount
 	}
-	threadID, err := s.st.DeletePost(ctx, actorID, postID)
+	threadID, err := s.st.DeletePost(ctx, actorID, postID, s.now().Unix())
 	if errors.Is(err, store.ErrNotFound) {
 		return ErrNotFound
 	}
@@ -192,7 +192,7 @@ func (s *Service) ToggleKudos(ctx context.Context, viewer Account, p Post) (bool
 	if viewer.ID == 0 {
 		return false, ErrNoAccount
 	}
-	on, err := s.st.ToggleKudos(ctx, p.ID, viewer.ID)
+	on, err := s.st.ToggleKudos(ctx, p.ID, viewer.ID, s.now().Unix())
 	if errors.Is(err, store.ErrNotFound) {
 		return false, ErrNotFound
 	}

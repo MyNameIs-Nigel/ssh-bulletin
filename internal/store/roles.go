@@ -69,8 +69,8 @@ func accountRole(ctx context.Context, tx *sql.Tx, id int64) (Role, error) {
 
 // SetAdmin checks the caller and the handle/key pair in the same transaction
 // as the role update, so a concurrent rename cannot change its target.
-func (st *Store) SetAdmin(ctx context.Context, actorID int64, handle, fingerprint string, grant bool) (Account, error) {
-	tx, err := st.db.BeginTx(ctx, nil)
+func (st *Store) SetAdmin(ctx context.Context, actorID int64, handle, fingerprint string, grant bool, now int64) (Account, error) {
+	tx, err := st.beginAccountWrite(ctx, actorID, now)
 	if err != nil {
 		return Account{}, err
 	}
