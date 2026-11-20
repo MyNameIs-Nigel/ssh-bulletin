@@ -142,6 +142,10 @@ func (m *Model) openCompose(mode composeMode) {
 		m.setFlash("This thread is closed to new replies")
 		return
 	}
+	if mode == composeReply && m.curThread.Locked() {
+		m.setFlash("This thread is locked to new replies")
+		return
+	}
 	if m.acct == nil {
 		m.setFlash("create an account first")
 		return
@@ -159,6 +163,7 @@ func (m *Model) openCompose(mode composeMode) {
 	}
 	if mode == composeReply {
 		t = m.curThread
+		t.Title = m.readingTitle()
 	}
 	if b.ID == 0 || (mode == composeReply && t.ID == 0) {
 		m.setFlash("Choose a board or thread to post in")

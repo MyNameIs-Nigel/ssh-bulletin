@@ -50,8 +50,12 @@ func (s *Service) SendChat(ctx context.Context, author Account, boardID int64, b
 // ChatHistory returns up to limit visible messages older than beforeID (0
 // for the newest), oldest first. more reports whether older ones exist.
 func (s *Service) ChatHistory(ctx context.Context, boardID, beforeID int64, limit int) (msgs []ChatMessage, more bool, err error) {
+	return s.ChatHistoryFor(ctx, 0, boardID, beforeID, limit)
+}
+
+func (s *Service) ChatHistoryFor(ctx context.Context, viewer, boardID, beforeID int64, limit int) (msgs []ChatMessage, more bool, err error) {
 	limit = max(1, min(limit, MaxChatFetch))
-	msgs, err = s.st.ChatBefore(ctx, boardID, beforeID, limit+1)
+	msgs, err = s.st.ChatBefore(ctx, boardID, beforeID, viewer, limit+1)
 	if len(msgs) > limit {
 		return msgs[1:], true, err
 	}
@@ -61,7 +65,11 @@ func (s *Service) ChatHistory(ctx context.Context, boardID, beforeID int64, limi
 // ChatSince returns the visible messages newer than afterID, oldest first.
 // A session that missed broker events catches up with it.
 func (s *Service) ChatSince(ctx context.Context, boardID, afterID int64) ([]ChatMessage, error) {
-	return s.st.ChatAfter(ctx, boardID, afterID, MaxChatFetch)
+	return s.ChatSinceFor(ctx, 0, boardID, afterID)
+}
+
+func (s *Service) ChatSinceFor(ctx context.Context, viewer, boardID, afterID int64) ([]ChatMessage, error) {
+	return s.st.ChatAfter(ctx, boardID, afterID, viewer, MaxChatFetch)
 }
 
 // DeleteChat withdraws the actor's own chat message.

@@ -195,6 +195,9 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case friendsMsg:
+		if msg.request == m.friendsRequest && msg.muteErr == nil && !maps.Equal(m.muted, msg.muted) {
+			cmds = append(cmds, m.receiveMutes(msg.muted))
+		}
 		if msg.request == m.friendsRequest && msg.err == nil && !maps.Equal(m.friends, msg.ids) {
 			m.friends = msg.ids
 			m.threadMenu.SetItems(m.threadItems())
@@ -220,6 +223,22 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.friends = friends
 		m.threadMenu.SetItems(m.threadItems())
 		m.syncDirectoryItems()
+		cmds = append(cmds, m.refreshFriends())
+
+	case muteSavedMsg:
+		m.opts.busy = false
+		if msg.err != nil {
+			m.setFlash(m.writeError(msg.err))
+			break
+		}
+		if m.overlay == ovOptions {
+			m.closeOverlay()
+		}
+		status := "Player unmuted"
+		if msg.on {
+			status = "Player muted"
+		}
+		m.toasts.Push(m.now(), status, "", m.myStops())
 		cmds = append(cmds, m.refreshFriends())
 
 	case registeredMsg:
@@ -308,6 +327,8 @@ func (m Model) updateScreen(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.toasts.Push(m.now(), msg.message, "", m.myStops())
 			if m.screen == scrThread && m.modForm.action == board.Removed && m.modForm.content.Kind == board.PostTarget {
 				cmds = append(cmds, m.onEvent(board.Event{Kind: board.EventModeration, ThreadID: m.curThread.ID, PostID: m.modForm.postID}))
+			} else if m.modForm.content.Kind == board.ThreadTarget {
+				cmds = append(cmds, m.onEvent(board.Event{Kind: board.EventModeration, ThreadID: m.modForm.content.ID}))
 			} else {
 				cmds = append(cmds, m.loadModeration())
 			}
@@ -508,12 +529,16 @@ func (m *Model) onEvent(ev board.Event) tea.Cmd {
 		if m.screen == scrThread && ev.ThreadID == m.curThread.ID && !mine {
 			cmds = append(cmds, m.loadPosts(m.curThread.ID, 0))
 		}
-		if !mine && m.screen != scrSplash && m.screen != scrOnboard {
+		if !mine && !m.muted[ev.AccountID] && m.screen != scrSplash && m.screen != scrOnboard {
 			verb := "replied in"
 			if ev.Kind == board.EventThread {
 				verb = "started"
 			}
-			m.toasts.Push(m.now(), ev.Actor+" "+verb, ev.Title, m.stopsForBoard(ev.BoardID))
+			title := ev.Title
+			if m.muted[ev.ThreadAuthorID] {
+				title = "Thread by muted player"
+			}
+			m.toasts.Push(m.now(), ev.Actor+" "+verb, title, m.stopsForBoard(ev.BoardID))
 		}
 	case board.EventKudos:
 		if m.screen == scrThread && ev.ThreadID == m.curThread.ID {
@@ -541,6 +566,10 @@ func (m *Model) onEvent(ev board.Event) tea.Cmd {
 	case board.EventRestriction:
 		if ev.AccountID == m.viewerID() {
 			cmds = append(cmds, m.refreshRole())
+		}
+	case board.EventMute:
+		if ev.AccountID == m.viewerID() {
+			cmds = append(cmds, m.refreshFriends())
 		}
 	case board.EventChat:
 		// Chat never toasts: it would bury every other notice. The board
@@ -647,6 +676,7 @@ func (m *Model) enterBoard(b board.Board) tea.Cmd {
 
 func (m *Model) enterThread(t board.Thread, focus int64) tea.Cmd {
 	m.curThread = t
+	m.revealedPosts = nil
 	m.screen = scrThread
 	m.posts = nil
 	m.postCursor, m.postTop = 0, 0
@@ -707,7 +737,7 @@ func friendly(err error) string {
 		board.ErrForbidden, board.ErrInvalidFingerprint, board.ErrKeyMismatch, board.ErrOwnerRole,
 		board.ErrReasonRequired, board.ErrAlreadyReported, board.ErrReviewChanged, board.ErrPostLimit,
 		board.ErrNewcomerLimit, board.ErrReportLimit, board.ErrPinLimit, board.ErrFlairInvalid, board.ErrSelfFriend, board.ErrChatLimit,
-		board.ErrHandleChangeRequired, board.ErrContactLimit, board.ErrRestrictionDuration} {
+		board.ErrHandleChangeRequired, board.ErrContactLimit, board.ErrRestrictionDuration, board.ErrThreadLocked, board.ErrSelfMute} {
 		if errors.Is(err, known) {
 			return known.Error()
 		}

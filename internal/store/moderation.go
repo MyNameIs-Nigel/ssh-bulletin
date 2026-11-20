@@ -18,6 +18,8 @@ const (
 	TimedOut             ModerationAction = "timed out"
 	Suspended            ModerationAction = "suspended"
 	RestrictionLifted    ModerationAction = "restriction lifted"
+	ThreadLocked         ModerationAction = "locked"
+	ThreadUnlocked       ModerationAction = "unlocked"
 )
 
 type TargetKind string
@@ -27,6 +29,7 @@ const (
 	ChatTarget    TargetKind = "chat"
 	ProfileTarget TargetKind = "profile"
 	ContactTarget TargetKind = "contact"
+	ThreadTarget  TargetKind = "thread"
 )
 
 type ModerationTarget struct {
@@ -64,6 +67,7 @@ var (
 	ErrPinLimit        = errors.New("that board already has 2 pinned threads. Unpin one first")
 	ErrAlreadyReported = errors.New("you already reported this item")
 	ErrReviewChanged   = errors.New("this item's moderation status changed. Refresh and try again")
+	ErrThreadLocked    = errors.New("this thread is locked to new replies")
 )
 
 type moderationEvidence struct{ title, author, body string }

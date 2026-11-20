@@ -60,12 +60,13 @@ const (
 )
 
 type chatLoadedMsg struct {
-	request int
-	mode    chatLoadMode
-	msgs    []board.ChatMessage
-	more    bool
-	err     error
-	refs    board.Refs
+	request     int
+	muteVersion int
+	mode        chatLoadMode
+	msgs        []board.ChatMessage
+	more        bool
+	err         error
+	refs        board.Refs
 }
 
 type chatSentMsg struct {
@@ -100,13 +101,13 @@ func (m *Model) resetChat(boardID int64) tea.Cmd {
 }
 
 func (m Model) loadChat(mode chatLoadMode, cursor int64, limit int) tea.Cmd {
-	d, request, boardID := m.d, m.chat.request, m.chat.boardID
+	d, request, boardID, viewer, muteVersion := m.d, m.chat.request, m.chat.boardID, m.viewerID(), m.muteVersion
 	return func() tea.Msg {
-		out := chatLoadedMsg{request: request, mode: mode}
+		out := chatLoadedMsg{request: request, mode: mode, muteVersion: muteVersion}
 		if mode == chatNewer {
-			out.msgs, out.err = d.Service.ChatSince(d.Context, boardID, cursor)
+			out.msgs, out.err = d.Service.ChatSinceFor(d.Context, viewer, boardID, cursor)
 		} else {
-			out.msgs, out.more, out.err = d.Service.ChatHistory(d.Context, boardID, cursor, limit)
+			out.msgs, out.more, out.err = d.Service.ChatHistoryFor(d.Context, viewer, boardID, cursor, limit)
 		}
 		bodies := make([]string, len(out.msgs))
 		for i, c := range out.msgs {
@@ -149,7 +150,7 @@ func (m Model) lastChatID() int64 {
 
 func (m *Model) receiveChat(msg chatLoadedMsg) tea.Cmd {
 	c := &m.chat
-	if msg.request != c.request {
+	if msg.request != c.request || msg.muteVersion != m.muteVersion {
 		return nil
 	}
 	m.mergeRefs(msg.refs)
@@ -517,6 +518,9 @@ func (m *Model) openChatOptions() {
 			m.startContentReport(board.ModerationTarget{Kind: board.ChatTarget, ID: msg.ID}, "@"+msg.AuthorHandle)
 			return nil
 		})
+		if m.viewerID() != msg.AuthorID {
+			add(m.muteAction(msg.AuthorID))
+		}
 	}
 	m.compose.lastShown = ovOptions
 	m.openOverlay(ovOptions)

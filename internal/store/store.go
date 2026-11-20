@@ -76,7 +76,10 @@ type Thread struct {
 	Pinned             bool
 	Removed            bool // staff removed the opening post and closed replies
 	OpeningUnavailable bool
+	LockReason         string
 }
+
+func (t Thread) Locked() bool { return t.LockReason != "" }
 
 // Post is one message in a thread.
 type Post struct {
@@ -254,14 +257,14 @@ const threadSelect = `SELECT t.id, t.board_id,
 	CASE WHEN t.removed = 1 THEN '< removed >' ELSE t.title END,
 	t.author_id, a.handle, a.palette, t.created_at, t.last_post_at,
 	(SELECT COUNT(*) FROM posts p WHERE p.thread_id = t.id AND p.id > opening.id AND p.removed = 0 AND p.deleted = 0),
-	t.pinned, CASE WHEN t.removed = 0 THEN opening.flair ELSE '' END, ` + roleSQL + `, t.removed, (t.removed = 1 OR opening.deleted = 1)
+	t.pinned, CASE WHEN t.removed = 0 THEN opening.flair ELSE '' END, ` + roleSQL + `, t.removed, (t.removed = 1 OR opening.deleted = 1), t.lock_reason
 	FROM threads t JOIN accounts a ON a.id = t.author_id
 	JOIN posts opening ON opening.id = (SELECT MIN(p.id) FROM posts p WHERE p.thread_id = t.id)`
 
 func scanThread(sc interface{ Scan(...any) error }) (Thread, error) {
 	var t Thread
 	err := sc.Scan(&t.ID, &t.BoardID, &t.Title, &t.AuthorID, &t.AuthorHandle, &t.AuthorPalette,
-		&t.CreatedAt, &t.LastPostAt, &t.ReplyCount, &t.Pinned, &t.Flair, &t.AuthorRole, &t.Removed, &t.OpeningUnavailable)
+		&t.CreatedAt, &t.LastPostAt, &t.ReplyCount, &t.Pinned, &t.Flair, &t.AuthorRole, &t.Removed, &t.OpeningUnavailable, &t.LockReason)
 	return t, err
 }
 
@@ -356,8 +359,15 @@ func (st *Store) Reply(ctx context.Context, threadID, authorID int64, body strin
 	defer func() { _ = tx.Rollback() }()
 	var title string
 	err = tx.QueryRowContext(ctx, `UPDATE threads SET last_post_at = max(last_post_at, ?)
-		WHERE id = ? AND removed = 0 RETURNING title`, now, threadID).Scan(&title)
+		WHERE id = ? AND removed = 0 AND lock_reason = '' RETURNING title`, now, threadID).Scan(&title)
 	if errors.Is(err, sql.ErrNoRows) {
+		var locked bool
+		if lookupErr := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM threads WHERE id = ? AND removed = 0 AND lock_reason != '')`, threadID).Scan(&locked); lookupErr != nil {
+			return 0, "", lookupErr
+		}
+		if locked {
+			return 0, "", ErrThreadLocked
+		}
 		return 0, "", ErrNotFound
 	}
 	if err != nil {

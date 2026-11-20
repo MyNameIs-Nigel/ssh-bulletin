@@ -16,18 +16,20 @@ const (
 	EventChat                             // a live chat message was sent
 	EventChatRemoved                      // a live chat message was deleted or removed
 	EventRestriction                      // an account's write restriction changed
+	EventMute                             // a viewer's private mute preferences changed
 )
 
 // Event is broadcast to every live session so screens refresh in place.
 type Event struct {
-	Kind      EventKind
-	AccountID int64
-	BoardID   int64
-	ThreadID  int64
-	PostID    int64
-	MessageID int64  // live chat message, for EventChat and EventChatRemoved
-	Actor     string // handle of whoever caused it
-	Title     string // thread title, for toasts
+	Kind           EventKind
+	AccountID      int64
+	BoardID        int64
+	ThreadID       int64
+	ThreadAuthorID int64
+	PostID         int64
+	MessageID      int64  // live chat message, for EventChat and EventChatRemoved
+	Actor          string // handle of whoever caused it
+	Title          string // thread title, for toasts
 }
 
 // Broker fans events out to subscribers. Delivery is best-effort: a slow

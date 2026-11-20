@@ -147,7 +147,7 @@ func (m Model) crumbs() ([]string, []func(*Model) tea.Cmd) {
 	case scrBoard:
 		return []string{"boards", m.curBoard.Title}, []func(*Model) tea.Cmd{home, nil}
 	case scrThread:
-		return []string{"boards", m.curBoard.Title, clip(m.curThread.Title, 32)}, []func(*Model) tea.Cmd{home, toBoard, nil}
+		return []string{"boards", m.curBoard.Title, clip(m.readingTitle(), 32)}, []func(*Model) tea.Cmd{home, toBoard, nil}
 	case scrChat:
 		return []string{"boards", m.curBoard.Title, "live chat"}, []func(*Model) tea.Cmd{home, toBoard, nil}
 	case scrModeration:
@@ -261,10 +261,13 @@ func (m Model) hints() []kit.Hint {
 		if len(links) > 0 {
 			hints = append(hints, kit.Hint{"tab", "links"})
 		}
-		if !m.curThread.Removed {
+		if !m.curThread.Removed && !m.curThread.Locked() {
 			hints = append(hints, kit.Hint{"r", "reply"})
 		}
 		if m.postCursor < len(m.posts) && m.posts[m.postCursor].Placeholder() == "" {
+			if m.muted[m.posts[m.postCursor].AuthorID] {
+				hints = append(hints, kit.Hint{"z", "reveal / hide"})
+			}
 			hints = append(hints, kit.Hint{"f", "kudos"}, kit.Hint{"!", "report"})
 		}
 		return append(hints, kit.Hint{"?", "help"})

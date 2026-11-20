@@ -38,6 +38,7 @@ const chatSelect = `SELECT c.id, c.board_id, c.author_id, a.handle, a.palette, `
 // visibleChat filters out deleted and removed messages: chat has no
 // placeholders, a withdrawn line simply disappears.
 const visibleChat = ` AND c.deleted = 0 AND c.removed = 0`
+const unmutedChat = ` AND NOT EXISTS(SELECT 1 FROM mutes WHERE viewer_id = ? AND muted_id = c.author_id)`
 
 func scanChat(rows *sql.Rows) ([]ChatMessage, error) {
 	defer rows.Close()
@@ -54,9 +55,9 @@ func scanChat(rows *sql.Rows) ([]ChatMessage, error) {
 
 // ChatBefore returns up to limit visible messages older than beforeID (0 for
 // the newest), oldest first.
-func (st *Store) ChatBefore(ctx context.Context, boardID, beforeID int64, limit int) ([]ChatMessage, error) {
-	q := chatSelect + ` WHERE c.board_id = ?` + visibleChat
-	args := []any{boardID}
+func (st *Store) ChatBefore(ctx context.Context, boardID, beforeID, viewer int64, limit int) ([]ChatMessage, error) {
+	q := chatSelect + ` WHERE c.board_id = ?` + visibleChat + unmutedChat
+	args := []any{boardID, viewer}
 	if beforeID > 0 {
 		q += ` AND c.id < ?`
 		args = append(args, beforeID)
@@ -72,9 +73,9 @@ func (st *Store) ChatBefore(ctx context.Context, boardID, beforeID int64, limit 
 
 // ChatAfter returns up to limit visible messages newer than afterID, oldest
 // first.
-func (st *Store) ChatAfter(ctx context.Context, boardID, afterID int64, limit int) ([]ChatMessage, error) {
-	rows, err := st.db.QueryContext(ctx, chatSelect+` WHERE c.board_id = ? AND c.id > ?`+visibleChat+
-		` ORDER BY c.id LIMIT ?`, boardID, afterID, limit)
+func (st *Store) ChatAfter(ctx context.Context, boardID, afterID, viewer int64, limit int) ([]ChatMessage, error) {
+	rows, err := st.db.QueryContext(ctx, chatSelect+` WHERE c.board_id = ? AND c.id > ?`+visibleChat+unmutedChat+
+		` ORDER BY c.id LIMIT ?`, boardID, afterID, viewer, limit)
 	if err != nil {
 		return nil, err
 	}

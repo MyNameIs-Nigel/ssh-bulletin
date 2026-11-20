@@ -122,6 +122,9 @@ type Model struct {
 	directory      directoryState
 	userProfile    userProfileState
 	friends        map[int64]bool
+	muted          map[int64]bool
+	revealedPosts  map[int64]bool
+	muteVersion    int
 	friendsRequest int
 	socialRequest  int
 

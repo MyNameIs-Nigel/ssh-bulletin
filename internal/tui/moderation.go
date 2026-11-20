@@ -370,6 +370,17 @@ func (m *Model) startRestrictionForm(action board.ModerationAction, account boar
 	m.openModerationForm()
 }
 
+func (m *Model) startThreadLockForm(t board.Thread) {
+	action := board.ThreadLocked
+	if t.Locked() {
+		action = board.ThreadUnlocked
+	}
+	m.modForm = moderationForm{action: action, target: t.Title,
+		content: board.ModerationTarget{Kind: board.ThreadTarget, ID: t.ID},
+		first:   m.moderationInput("Reason", board.MaxReasonLen)}
+	m.openModerationForm()
+}
+
 func (m *Model) openStaffContact() tea.Cmd {
 	m.modForm = moderationForm{action: board.Reported, content: board.ModerationTarget{Kind: board.ContactTarget},
 		first: m.moderationInput("Your message to staff", board.MaxChatLen)}
@@ -468,6 +479,8 @@ func (m *Model) submitModerationForm() tea.Cmd {
 		case board.TimedOut, board.Suspended, board.RestrictionLifted:
 			duration, _ := time.ParseDuration(strings.TrimSpace(second))
 			return moderationResultMsg{message: "Account " + string(f.action), err: d.Service.SetRestriction(d.Context, id, f.content.ID, f.action, first, duration)}
+		case board.ThreadLocked, board.ThreadUnlocked:
+			return moderationResultMsg{message: "Thread " + string(f.action), err: d.Service.SetThreadLock(d.Context, id, f.content.ID, f.action == board.ThreadLocked, first)}
 		default:
 			if f.reportID != 0 {
 				return moderationResultMsg{message: "Decision recorded", err: d.Service.ReviewReport(d.Context, id, f.reportID, f.action, first)}
@@ -511,6 +524,10 @@ func (m Model) viewModerationForm() string {
 		title = "Suspend account"
 	case board.RestrictionLifted:
 		title = "Lift restriction"
+	case board.ThreadLocked:
+		title = "Lock thread"
+	case board.ThreadUnlocked:
+		title = "Unlock thread"
 	default:
 		title = "Revoke admin access"
 		if f.grant {
