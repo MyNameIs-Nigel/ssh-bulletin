@@ -151,6 +151,13 @@ func (m *Model) openOptions() {
 		label, mute := m.muteAction(authorID)
 		add(label, "", mute)
 	}
+	if m.acct != nil && p.ID != 0 && p.Placeholder() == "" {
+		opening, title := m.opts.opening, m.readingTitle()
+		add("Report post", "", func(m *Model) tea.Cmd {
+			m.reportPost(p, title, opening)
+			return nil
+		})
+	}
 	if m.canModerate() && !t.Removed {
 		label := "Lock thread"
 		if t.Locked() {

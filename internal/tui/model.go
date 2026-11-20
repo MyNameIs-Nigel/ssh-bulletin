@@ -142,6 +142,7 @@ type Model struct {
 	// Overlays.
 	overlay  overlayKind
 	overlayT float64 // 0..1 open animation
+	helpTop  int
 	compose  composeState
 	pal      paletteState
 

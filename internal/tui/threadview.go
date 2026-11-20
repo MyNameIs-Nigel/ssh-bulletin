@@ -88,8 +88,8 @@ func (m *Model) updateThread(k tea.KeyPressMsg) tea.Cmd {
 			}
 		}
 	case "!", "shift+1":
-		if m.postCursor < len(m.posts) && m.acct != nil && m.posts[m.postCursor].Placeholder() == "" {
-			m.startModerationForm(board.Reported, m.posts[m.postCursor].ID, m.readingTitle(), m.postCursor == 0)
+		if m.postCursor < len(m.posts) {
+			m.reportPost(m.posts[m.postCursor], m.readingTitle(), m.postCursor == 0)
 		}
 	case "o":
 		m.openOptions()
@@ -112,6 +112,12 @@ func (m *Model) updateThread(k tea.KeyPressMsg) tea.Cmd {
 	}
 	m.followCursor()
 	return nil
+}
+
+func (m *Model) reportPost(post board.Post, title string, opening bool) {
+	if m.acct != nil && post.ID != 0 && post.Placeholder() == "" {
+		m.startModerationForm(board.Reported, post.ID, title, opening)
+	}
 }
 
 // threadLines renders the whole thread into lines, and records where each

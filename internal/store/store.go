@@ -270,7 +270,7 @@ func scanThread(sc interface{ Scan(...any) error }) (Thread, error) {
 
 // Threads lists a board's threads, pinned first then most recently active.
 func (st *Store) Threads(ctx context.Context, boardID int64) ([]Thread, error) {
-	rows, err := st.db.QueryContext(ctx, threadSelect+` WHERE t.board_id = ? ORDER BY t.pinned DESC, t.last_post_at DESC, t.id DESC`, boardID)
+	rows, err := st.db.QueryContext(ctx, threadSelect+` WHERE t.board_id = ? ORDER BY t.pinned DESC, (t.pinned AND t.welcome) DESC, t.last_post_at DESC, t.id DESC`, boardID)
 	if err != nil {
 		return nil, err
 	}

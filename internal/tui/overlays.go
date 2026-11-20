@@ -46,9 +46,7 @@ func (m *Model) updateOverlay(msg tea.Msg) tea.Cmd {
 	case ovLink:
 		return m.updateLinkModal(msg)
 	case ovHelp:
-		if _, ok := msg.(tea.KeyPressMsg); ok {
-			m.closeOverlay()
-		}
+		m.updateHelp(msg)
 	}
 	return nil
 }
@@ -78,6 +76,9 @@ func (m Model) drawOverlay(sc *kit.Scene) {
 	y := max(1, (m.h-h)/2+lift)
 	if m.shownOverlay() == ovPalette {
 		y = max(2, m.h/6+lift)
+	}
+	if m.shownOverlay() == ovHelp {
+		y = min(y, max(0, m.h-h-1))
 	}
 	sc.Overlay(card, max(0, (m.w-w)/2), y, m.th.Overlay)
 }
@@ -298,8 +299,12 @@ func (m Model) viewCompose() string {
 	cw := min(m.w-8, 86)
 	var b strings.Builder
 	b.WriteString("\n")
+	publicCue := ""
+	if m.acct != nil && m.acct.PostCount == 0 {
+		publicCue = kit.S(m.th.Muted).Render("Posts are public to every arcade player.")
+	}
 	if c.destination.threadID == 0 {
-		b.WriteString(kit.S(m.th.Muted).Render("new thread in ") + kit.GradientBold(clip(c.board.Title, max(1, cw-20)), kit.PaletteNamed(c.board.Palette).Stops) + "\n\n")
+		b.WriteString(kit.S(m.th.Muted).Render("new thread in ") + kit.GradientBold(clip(c.board.Title, max(1, cw-20)), kit.PaletteNamed(c.board.Palette).Stops) + "\n" + publicCue + "\n")
 		b.WriteString(c.title.View() + "\n")
 		b.WriteString(kit.Rule(cw-6, "─", stops, 0) + "\n\n")
 	} else {
@@ -312,7 +317,7 @@ func (m Model) viewCompose() string {
 				}
 			}
 		}
-		b.WriteString(kit.S(m.th.Muted).Render("replying to ") + kit.S(m.th.Text).Bold(true).Render(clip(destination, max(1, cw-20))) + "\n\n")
+		b.WriteString(kit.S(m.th.Muted).Render("replying to ") + kit.S(m.th.Text).Bold(true).Render(clip(destination, max(1, cw-20))) + "\n" + publicCue + "\n")
 	}
 	b.WriteString(c.body.View() + "\n\n")
 	count := len([]rune(c.body.Value()))
@@ -396,7 +401,7 @@ func (m *Model) openPalette() {
 			return nil
 		}},
 		action{"Edit profile", "palette, bio, flair", m.myStops(), func(m *Model) tea.Cmd { m.openProfile(); return nil }},
-		action{"Keyboard help", "help", brand, func(m *Model) tea.Cmd { m.openOverlay(ovHelp); return nil }},
+		action{"Keyboard help", "help", brand, (*Model).openHelp},
 		action{"Quit", "leave", brand, func(*Model) tea.Cmd { return tea.Quit }},
 	)
 	if m.canModerate() {
@@ -493,44 +498,5 @@ func (m Model) viewPalette() string {
 	body := "\n" + m.pal.input.View() + "\n" + kit.Rule(w-4, "─", acc, 0) + "\n" + list
 	p := kit.Panel{Title: "⌘ jump", Width: w, Height: lipgloss.Height(body) + 2, Stops: acc, Focused: true,
 		Phase: m.panelPhase(), Fill: m.th.Overlay, Theme: m.th}
-	return p.Render(body)
-}
-
-// ---- help ---------------------------------------------------------------
-
-func (m Model) viewHelp() string {
-	acc := m.accent()
-	groups := []struct {
-		title string
-		keys  []kit.Hint
-	}{
-		{"anywhere", []kit.Hint{{"/ ctrl+k", "jump palette"}, {"u", "user directory"}, {"p", "edit your profile"}, {"esc", "back"}, {"ctrl+c", "leave"}}},
-		{"lists", []kit.Hint{{"↑↓ j k", "move"}, {"⏎ → l", "open"}, {"g G", "top / bottom"}, {"n", "new thread"}, {"o", "thread options"}, {"tab", "board chat"}}},
-		{"threads", []kit.Hint{{"↑↓", "post by post"}, {"tab", "links in post"}, {"o", "post options"}, {"r ⏎", "reply"}, {"f +", "kudos"}, {"!", "report"}}},
-		{"writing", []kit.Hint{{"ctrl+s", "post"}, {"tab", "title ↔ body"}, {"esc", "save draft"}, {"ctrl+x", "discard draft"}, {"⏎", "send in chat"}, {"tab", "chat: pick message"}}},
-	}
-	if m.canModerate() {
-		groups[0].keys = append(groups[0].keys, kit.Hint{"m", "moderation"})
-	}
-	col := func(gi int) string {
-		g := groups[gi]
-		var b strings.Builder
-		b.WriteString(kit.Gradient(strings.ToUpper(g.title), lipgloss.NewStyle().Bold(true), acc, 0) + "\n")
-		for i, k := range g.keys {
-			key := kit.S(kit.At(acc, float64(i)/4)).Bold(true).Render(kit.Fit(k[0], 11))
-			b.WriteString(key + kit.S(m.th.Subtle).Render(k[1]) + "\n")
-		}
-		return b.String()
-	}
-	code := func(s string) string { return kit.S(kit.At(acc, 0.5)).Bold(true).Render(s) }
-	format := kit.Gradient("FORMATTING", lipgloss.NewStyle().Bold(true), acc, 0) + "\n" +
-		code("**bold**  *italic*  `code`  ~~strike~~  - list  1. list  > quote") + "\n" +
-		code("@user  #board  #12") + kit.S(m.th.Subtle).Render(" thread ") + code("#12/3") + kit.S(m.th.Subtle).Render(" post ") +
-		code("[label](link)") + "\n" +
-		kit.S(m.th.Muted).Render("links outside the bulletin always show where they go first") + "\n"
-	body := m.rtt.String() + "\n" + kit.SideBySide(4, col(0), col(1)) + "\n" + kit.SideBySide(4, col(2), col(3)) +
-		"\n" + format + "\n" + kit.S(m.th.Faint).Render("your key is your account · posts are public to every arcade player")
-	p := kit.Panel{Title: "? help", Width: lipgloss.Width(body) + 6, Height: lipgloss.Height(body) + 3, Stops: acc, Focused: true,
-		Phase: m.panelPhase(), Fill: m.th.Overlay, Theme: m.th, PadX: 2}
 	return p.Render(body)
 }

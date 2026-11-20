@@ -11,6 +11,9 @@ func (m *Model) onWheel(msg tea.MouseWheelMsg) tea.Cmd {
 		d = -1
 	}
 	if m.overlay != ovNone {
+		if m.overlay == ovHelp {
+			m.scrollHelp(3 * d)
+		}
 		if m.overlay == ovOptions && !m.opts.confirming && !m.opts.busy {
 			m.opts.menu.Move(d)
 			m.opts.menu.Snap()
