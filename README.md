@@ -1,9 +1,13 @@
 # ssh-bulletin
 
+[![CI](https://github.com/MyNameIs-Nigel/ssh-bulletin/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/MyNameIs-Nigel/ssh-bulletin/actions/workflows/ci.yml)
+[![Release](https://github.com/MyNameIs-Nigel/ssh-bulletin/actions/workflows/release.yml/badge.svg?event=release)](https://github.com/MyNameIs-Nigel/ssh-bulletin/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/MyNameIs-Nigel/ssh-bulletin?label=latest%20release)](https://github.com/MyNameIs-Nigel/ssh-bulletin/releases/latest)
+
 A bulletin board you reach over SSH — part of the **ssharcade** fleet.
 
 ```
-ssh play.ssharcade.dev     # pick BULLETIN once it is listed in the lobby
+ssh ssharcade.dev     # pick BULLETIN in the lobby
 ```
 
 **Your SSH key is your account.** No password, no email, and — unlike the other
