@@ -47,7 +47,7 @@ jobs:
         run: govulncheck github.com/benbjohnson/litestream/cmd/litestream
       - name: gitleaks
         # Host keys and the router's proxy key must never enter history.
-        uses: gitleaks/gitleaks-action@v3
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: "false"
