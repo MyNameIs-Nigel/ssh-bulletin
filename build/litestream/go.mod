@@ -116,11 +116,12 @@ require (
 	go.opentelemetry.io/contrib/detectors/gcp v1.44.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.61.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.61.0 // indirect
-	go.opentelemetry.io/otel v1.45.0 // indirect
-	go.opentelemetry.io/otel/metric v1.45.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.45.0 // indirect
-	go.opentelemetry.io/otel/sdk/metric v1.45.0 // indirect
-	go.opentelemetry.io/otel/trace v1.45.0 // indirect
+	go.opentelemetry.io/otel v1.47.0 // indirect
+	go.opentelemetry.io/otel/log v1.47.0 // indirect
+	go.opentelemetry.io/otel/metric v1.47.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.47.0 // indirect; security floor: >= v1.47.0 for GO-2026-6974
+	go.opentelemetry.io/otel/sdk/metric v1.47.0 // indirect
+	go.opentelemetry.io/otel/trace v1.47.0 // indirect; security floor: >= v1.47.0 for GO-2026-6974
 	golang.org/x/crypto v0.58.0 // indirect; security floor: >= v0.56.0 for GO-2026-6354 and GO-2026-6355, reachable via litestream's sftp replica client (ssh.Dial), and >= v0.55.0 for CVE-2026-56854; litestream v0.5.17 pins v0.52.0
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20260209214922-2f26647a795e // indirect
 	golang.org/x/net v0.62.0 // indirect; security floor: >= v0.62.0 for CVE-2026-78661 (x/net/html DoS), >= v0.60.0 for October 2026 HTTP/2 advisories, and >= v0.56.0 for CVE-2026-46600 (dnsmessage DoS); litestream v0.5.17 pins v0.55.0
